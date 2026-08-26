@@ -279,17 +279,9 @@
 
                             <div class="divider"></div>
 
-                            <div class="smart-clean-box">
-                                <h3>💡 智能一键清理</h3>
-                                <p>自动对比比特率、无损格式与采样率，保留每组最高音质版本，清理多余副本。</p>
-                                <div class="btn-group-vertical">
-                                    <button type="button" id="btn-clean-recycle" class="btn btn-warning btn-sm">
-                                        <span>♻️ 一键将冗余项移至回收站</span>
-                                    </button>
-                                    <button type="button" id="btn-clean-delete" class="btn btn-danger-outline btn-sm">
-                                        <span>🗑️ 一键彻底删除冗余文件</span>
-                                    </button>
-                                </div>
+                            <div class="smart-clean-box" style="background: rgba(124, 58, 237, 0.06); border-color: rgba(124, 58, 237, 0.2);">
+                                <h3 style="color: var(--accent-primary);">💡 声学指纹与去重机制</h3>
+                                <p>基于 AcoustID 算法比对实际声学波形特征，不受标签或格式差异影响。系统已为您自动分析并标记出 ⭐ 最佳音质版本，您可在右侧顶部使用“一键回收冗余”或按勾选批量清理。</p>
                             </div>
                         </div>
                     </div>
@@ -339,12 +331,31 @@
                                 <div class="toolbar-left">
                                     <span class="section-title">重复音频分组</span>
                                     <span class="badge" id="badge-groups-count">0 组</span>
+                                    <div class="selection-tools">
+                                        <button type="button" class="btn btn-secondary btn-sm" id="btn-dedup-select-redundant" title="选中所有标记为冗余/非推荐的音频">
+                                            ☑️ 选中冗余项
+                                        </button>
+                                        <button type="button" class="btn btn-secondary btn-sm" id="btn-dedup-select-none" title="取消所有勾选">
+                                            清空勾选
+                                        </button>
+                                    </div>
                                 </div>
                                 <div class="toolbar-right">
-                                    <button id="btn-refresh-groups" class="btn btn-secondary btn-sm">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
-                                        刷新重复列表
-                                    </button>
+                                    <div class="btn-group-actions">
+                                        <button type="button" id="btn-clean-recycle" class="btn btn-warning btn-sm" title="一键将所有组中判定为冗余的多余版本移入回收站">
+                                            ♻️ 一键回收冗余
+                                        </button>
+                                        <button type="button" id="btn-dedup-batch-recycle-selected" class="btn btn-secondary btn-sm" title="仅清理当前勾选的音频到回收站">
+                                            ♻️ 回收勾选项
+                                        </button>
+                                        <button type="button" id="btn-clean-delete" class="btn btn-danger-outline btn-sm" title="一键彻底永久删除所有冗余音频文件">
+                                            🗑️ 彻底删除冗余
+                                        </button>
+                                        <button id="btn-refresh-groups" class="btn btn-secondary btn-sm" title="刷新重复列表">
+                                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                            刷新
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 

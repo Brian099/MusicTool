@@ -769,13 +769,47 @@ function initDeduplicator() {
     // 刷新重复列表
     document.getElementById('btn-refresh-groups').addEventListener('click', loadDuplicateGroups);
 
-    // 一键智能清理
-    document.getElementById('btn-clean-recycle').addEventListener('click', () => cleanRecommended('recycle'));
-    document.getElementById('btn-clean-delete').addEventListener('click', () => {
-        if (confirm('【高危提醒】这将永久彻底删除所有重复组中被判定为冗余的音频文件，无法撤销！建议使用移入回收站。确定彻底删除吗？')) {
-            cleanRecommended('delete');
-        }
-    });
+    // 快捷勾选工具
+    const selectRedundantBtn = document.getElementById('btn-dedup-select-redundant');
+    if (selectRedundantBtn) {
+        selectRedundantBtn.addEventListener('click', () => {
+            const checks = document.querySelectorAll('.dedup-item-check');
+            checks.forEach(cb => {
+                const tr = cb.closest('tr');
+                cb.checked = tr ? !tr.classList.contains('is-recommended') : false;
+            });
+            showToast('已选中所有标记为冗余的音频', 'info');
+        });
+    }
+
+    const selectNoneBtn = document.getElementById('btn-dedup-select-none');
+    if (selectNoneBtn) {
+        selectNoneBtn.addEventListener('click', () => {
+            const checks = document.querySelectorAll('.dedup-item-check');
+            checks.forEach(cb => cb.checked = false);
+            showToast('已清空所有勾选', 'info');
+        });
+    }
+
+    // 顶部操作栏：智能一键清理与批量清理
+    const cleanRecycleBtn = document.getElementById('btn-clean-recycle');
+    if (cleanRecycleBtn) {
+        cleanRecycleBtn.addEventListener('click', () => cleanRecommended('recycle'));
+    }
+
+    const cleanBatchRecycleBtn = document.getElementById('btn-dedup-batch-recycle-selected');
+    if (cleanBatchRecycleBtn) {
+        cleanBatchRecycleBtn.addEventListener('click', () => cleanSelectedDuplicates('recycle'));
+    }
+
+    const cleanDeleteBtn = document.getElementById('btn-clean-delete');
+    if (cleanDeleteBtn) {
+        cleanDeleteBtn.addEventListener('click', () => {
+            if (confirm('【高危提醒】这将永久彻底删除所有重复组中被判定为冗余的音频文件，无法撤销！建议使用移入回收站。确定彻底删除吗？')) {
+                cleanRecommended('delete');
+            }
+        });
+    }
 }
 
 function startDedupPolling() {
@@ -940,6 +974,33 @@ async function cleanRecommended(action = 'recycle') {
         loadDuplicateGroups();
     } catch (e) {
         showToast('智能清理失败: ' + e.message, 'error');
+    }
+}
+
+async function cleanSelectedDuplicates(action = 'recycle') {
+    const selected = Array.from(document.querySelectorAll('.dedup-item-check:checked')).map(cb => cb.value);
+    if (selected.length === 0) {
+        showToast('请先勾选需要清理的重复文件', 'warn');
+        return;
+    }
+
+    if (action === 'delete') {
+        if (!confirm(`【高危警告】确定要彻底删除选中的 ${selected.length} 个文件吗？数据无法恢复！`)) return;
+    } else {
+        if (!confirm(`确定将选中的 ${selected.length} 个文件移入安全回收站吗？`)) return;
+    }
+
+    try {
+        const res = await fetch(API.dedupClean, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ file_paths: selected, action: action })
+        });
+        const data = await res.json();
+        showToast(`批量清理完成！共处理 ${data.total} 个文件`, 'success');
+        loadDuplicateGroups();
+    } catch (e) {
+        showToast('批量清理失败: ' + e.message, 'error');
     }
 }
 
