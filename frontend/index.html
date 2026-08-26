@@ -1,0 +1,510 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>音乐工具箱 (Music Toolkit) - 格式修复与声学指纹去重</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body class="light-theme">
+    <!-- 动态背景光晕 -->
+    <div class="glow-bg glow-1"></div>
+    <div class="glow-bg glow-2"></div>
+    <div class="glow-bg glow-3"></div>
+
+    <div class="app-container">
+        <!-- 顶部导航栏 -->
+        <header class="app-header glass-panel">
+            <div class="brand">
+                <div class="logo-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M9 18V5l12-2v13"></path>
+                        <circle cx="6" cy="18" r="3"></circle>
+                        <circle cx="18" cy="16" r="3"></circle>
+                    </svg>
+                </div>
+                <div class="brand-text">
+                    <h1>Music Toolkit</h1>
+                    <span class="version-tag">v2.0 (Format + Songloft Dedup)</span>
+                </div>
+            </div>
+
+            <!-- 系统状态标签 -->
+            <div class="system-status-chips">
+                <div class="chip" id="chip-ffmpeg" title="FFmpeg 状态">
+                    <span class="dot"></span>
+                    <span class="label">FFmpeg</span>
+                </div>
+                <div class="chip" id="chip-chromaprint" title="Chromaprint AcoustID 音频指纹支持">
+                    <span class="dot"></span>
+                    <span class="label">Chromaprint</span>
+                </div>
+                <div class="chip" id="chip-music-dir" title="音乐库挂载状态">
+                    <span class="dot"></span>
+                    <span class="label" id="music-dir-label">/music</span>
+                </div>
+            </div>
+
+            <div class="header-right-tools">
+                <!-- 导航标签 -->
+                <nav class="nav-tabs">
+                    <button class="nav-tab active" data-tab="tab-format">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+                        <span>格式一致性修复</span>
+                    </button>
+                    <button class="nav-tab" data-tab="tab-dedup">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                        <span>音频指纹去重</span>
+                        <span class="badge-accent">Songloft 引擎</span>
+                    </button>
+                    <button class="nav-tab" data-tab="tab-lossless">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                        <span>真假无损鉴别</span>
+                        <span class="badge-accent">FLAC/APE</span>
+                    </button>
+                </nav>
+
+                <!-- 明暗主题切换 -->
+                <button id="btn-toggle-theme" class="btn-theme-toggle" title="切换明暗主题">☀️</button>
+            </div>
+        </header>
+
+        <!-- 主内容区域 -->
+        <main class="app-main">
+            <!-- TAB 1: 格式一致性检查器 -->
+            <section id="tab-format" class="tab-content active">
+                <div class="grid-layout">
+                    <!-- 控制侧边栏 -->
+                    <div class="control-panel glass-panel">
+                        <div class="panel-header">
+                            <h2>格式检查配置</h2>
+                            <p class="subtitle">检测真实音频格式与后缀不一致、下载损坏或防盗链网页伪装文件</p>
+                        </div>
+
+                        <form id="form-format-scan" class="config-form">
+                            <div class="form-group">
+                                <label for="fmt-music-dir">待扫描音乐目录</label>
+                                <input type="text" id="fmt-music-dir" class="input-text" placeholder="/music">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="fmt-action">处理动作</label>
+                                <select id="fmt-action" class="select-input">
+                                    <option value="scan" selected>🔍 仅扫描并输出报告（不修改文件）</option>
+                                    <option value="rename_fix">✏️ 原地直接纠正后缀（如 .mp3 -> .m4a）</option>
+                                    <option value="copy">📋 复制不一致文件到输出目录</option>
+                                    <option value="move">📦 移动不一致文件到输出目录</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="fmt-output-dir">异常文件输出目录</label>
+                                <input type="text" id="fmt-output-dir" class="input-text" placeholder="/output">
+                            </div>
+
+                            <div class="form-row">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="fmt-keep-structure" checked>
+                                    <span>保留相对文件夹层级</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="fmt-fix-ext" checked>
+                                    <span>导出时修正为真实后缀</span>
+                                </label>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="fmt-workers">并发扫描线程数: <span id="fmt-workers-val">4</span></label>
+                                <input type="range" id="fmt-workers" min="1" max="16" value="4" class="slider-input">
+                            </div>
+
+                            <button type="submit" id="btn-start-format" class="btn btn-primary btn-glow">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polygon points="10 8 16 12 10 16 10 8"></polygon></svg>
+                                <span>开始扫描检测</span>
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- 结果展示区 -->
+                    <div class="display-panel">
+                        <!-- 统计概览卡片 -->
+                        <div class="stats-grid">
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-total">🎵</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">扫描文件总数</span>
+                                    <span class="stat-value" id="stat-fmt-total">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-ok">✅</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">格式完全匹配</span>
+                                    <span class="stat-value" id="stat-fmt-ok">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel highlight-warn">
+                                <div class="stat-icon icon-warn">⚠️</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">后缀不一致</span>
+                                    <span class="stat-value" id="stat-fmt-mismatch">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel highlight-danger">
+                                <div class="stat-icon icon-error">🚫</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">损坏或虚假网页</span>
+                                    <span class="stat-value" id="stat-fmt-fake">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 进度指示条 -->
+                        <div id="format-progress-container" class="progress-panel glass-panel hidden">
+                            <div class="progress-header">
+                                <span class="progress-title" id="fmt-progress-text">正在扫描音频文件...</span>
+                                <span class="progress-percent" id="fmt-progress-percent">0%</span>
+                            </div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="fmt-progress-bar"></div>
+                            </div>
+                            <div class="progress-sub" id="fmt-current-file">准备中...</div>
+                        </div>
+
+                        <!-- 异常文件列表 -->
+                        <div class="table-panel glass-panel">
+                            <div class="table-header">
+                                <div>
+                                    <h3>异常文件列表</h3>
+                                    <span class="table-subtitle" id="fmt-record-count">共发现 0 项异常</span>
+                                </div>
+                                <div class="table-actions">
+                                    <input type="text" id="fmt-filter-query" class="input-search" placeholder="搜索文件名或格式...">
+                                    <button id="btn-export-csv" class="btn btn-secondary btn-sm">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                        导出 CSV 报告
+                                    </button>
+                                    <button id="btn-batch-fix-rename" class="btn btn-success btn-sm">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                                        批量修正后缀
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="table-container">
+                                <table class="data-table" id="table-format-records">
+                                    <thead>
+                                        <tr>
+                                            <th width="40"><input type="checkbox" id="fmt-check-all"></th>
+                                            <th>音频文件</th>
+                                            <th>当前后缀</th>
+                                            <th>真实探测格式</th>
+                                            <th>建议后缀</th>
+                                            <th>探测详情</th>
+                                            <th>状态</th>
+                                            <th width="120">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="fmt-records-body">
+                                        <tr>
+                                            <td colspan="8" class="empty-state">
+                                                <div class="empty-icon">📂</div>
+                                                <p>点击左侧“开始扫描检测”按钮进行分析</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 2: 音频指纹去重器 (Songloft 引擎) -->
+            <section id="tab-dedup" class="tab-content">
+                <div class="grid-layout">
+                    <!-- 控制侧边栏 -->
+                    <div class="control-panel glass-panel">
+                        <div class="panel-header">
+                            <h2>声学指纹去重</h2>
+                            <p class="subtitle">Songloft 核心 AcoustID 算法 + 30s 时长容差精准聚类</p>
+                        </div>
+
+                        <div class="config-form">
+                            <div class="form-group">
+                                <label for="dedup-music-dir">扫描音乐目录</label>
+                                <input type="text" id="dedup-music-dir" class="input-text" placeholder="/music">
+                            </div>
+
+                            <div class="form-group">
+                                <label for="dedup-tolerance">时长聚类容差 (秒): <span id="dedup-tolerance-val">30s</span></label>
+                                <input type="range" id="dedup-tolerance" min="0" max="60" value="30" step="1" class="slider-input">
+                                <span class="input-hint">同指纹内全片时长相差在该阈值内聚为同首，建议 30 秒。</span>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="dedup-workers">指纹计算并发数: <span id="dedup-workers-val">4</span></label>
+                                <input type="range" id="dedup-workers" min="1" max="8" value="4" class="slider-input">
+                            </div>
+
+                            <div class="btn-group-vertical">
+                                <button type="button" id="btn-dedup-missing" class="btn btn-primary btn-glow">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                    <span>计算缺失指纹 (推荐)</span>
+                                </button>
+                                <div class="btn-row">
+                                    <button type="button" id="btn-dedup-recompute" class="btn btn-secondary btn-sm" title="清空全部缓存指纹后全量重算">
+                                        <span>🔄 全量重新计算</span>
+                                    </button>
+                                    <button type="button" id="btn-dedup-retry" class="btn btn-secondary btn-sm" title="仅重试之前计算失败的音频">
+                                        <span>⚡ 重试失败项</span>
+                                    </button>
+                                </div>
+                                <button type="button" id="btn-dedup-cancel" class="btn btn-danger btn-sm hidden">
+                                    <span>🛑 中止指纹计算</span>
+                                </button>
+                            </div>
+
+                            <div class="divider"></div>
+
+                            <div class="smart-clean-box">
+                                <h3>💡 智能一键清理</h3>
+                                <p>自动对比比特率、无损格式与采样率，保留每组最高音质版本，清理多余副本。</p>
+                                <div class="btn-group-vertical">
+                                    <button type="button" id="btn-clean-recycle" class="btn btn-warning btn-sm">
+                                        <span>♻️ 一键将冗余项移至回收站</span>
+                                    </button>
+                                    <button type="button" id="btn-clean-delete" class="btn btn-danger-outline btn-sm">
+                                        <span>🗑️ 一键彻底删除冗余文件</span>
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 重复组展示区 -->
+                    <div class="display-panel">
+                        <!-- 统计概览卡片 -->
+                        <div class="stats-grid">
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-dup">👥</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">重复歌曲组数</span>
+                                    <span class="stat-value" id="stat-dedup-groups">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-count">📑</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">涉及重复音频总数</span>
+                                    <span class="stat-value" id="stat-dedup-songs">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel highlight-accent">
+                                <div class="stat-icon icon-save">💾</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">预计可释放空间</span>
+                                    <span class="stat-value" id="stat-dedup-wasted">0 MB</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 指纹进度指示条 -->
+                        <div id="dedup-progress-container" class="progress-panel glass-panel hidden">
+                            <div class="progress-header">
+                                <span class="progress-title" id="dedup-progress-text">正在计算音频指纹...</span>
+                                <span class="progress-percent" id="dedup-progress-percent">0%</span>
+                            </div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="dedup-progress-bar"></div>
+                            </div>
+                            <div class="progress-sub" id="dedup-current-file">正在提取指纹...</div>
+                        </div>
+
+                        <!-- 重复组卡片列表容器 -->
+                        <div class="duplicate-groups-panel">
+                            <div class="groups-toolbar glass-panel">
+                                <div class="toolbar-left">
+                                    <span class="section-title">重复音频分组</span>
+                                    <span class="badge" id="badge-groups-count">0 组</span>
+                                </div>
+                                <div class="toolbar-right">
+                                    <button id="btn-refresh-groups" class="btn btn-secondary btn-sm">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path></svg>
+                                        刷新重复列表
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div id="duplicate-groups-list" class="duplicate-groups-list">
+                                <div class="empty-state glass-panel">
+                                    <div class="empty-icon">✨</div>
+                                    <h3>暂未发现重复音频</h3>
+                                    <p>点击左侧“计算缺失指纹”即可自动扫描曲库并聚类重复音乐</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 3: 真假无损鉴别 (FLAC/APE 频谱分析) -->
+            <section id="tab-lossless" class="tab-content">
+                <div class="grid-layout">
+                    <!-- 控制侧边栏 -->
+                    <div class="control-panel glass-panel">
+                        <div class="panel-header">
+                            <h2>真假无损鉴别</h2>
+                            <p class="subtitle">基于高频截止频率 (16k/20k 刀切线) 与泛音能量分析判定真假无损</p>
+                        </div>
+
+                        <form id="form-lossless-scan" class="config-form">
+                            <div class="form-group">
+                                <label for="lossless-music-dir">待检测目录</label>
+                                <input type="text" id="lossless-music-dir" class="input-text" placeholder="/music">
+                                <span class="input-hint">将自动筛选目录中所有的 .flac, .ape, .wav, .alac 格式</span>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="lossless-workers">并发检测线程: <span id="lossless-workers-val">4</span></label>
+                                <input type="range" id="lossless-workers" min="1" max="8" value="4" class="slider-input">
+                            </div>
+
+                            <button type="submit" id="btn-start-lossless" class="btn btn-primary btn-glow">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                                <span>开始鉴别无损真伪</span>
+                            </button>
+                        </form>
+
+                        <div class="divider"></div>
+
+                        <div class="smart-clean-box">
+                            <h3>🔍 鉴别标准说明</h3>
+                            <ul style="font-size: 11px; color: var(--text-muted); padding-left: 16px; line-height: 1.6;">
+                                <li><strong>🏆 真 Hi-Res</strong>：高频自然延伸超越 24kHz~48kHz。</li>
+                                <li><strong>💎 真 CD 无损</strong>：20kHz~22.05kHz 高频泛音丰富连贯。</li>
+                                <li><strong>⚠️ 假无损 (320k)</strong>：在 20kHz 处有明显刀切截断线。</li>
+                                <li><strong>🚫 劣质假无损 (128k)</strong>：16kHz 以上几乎无有效高频。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- 结果展示区 -->
+                    <div class="display-panel">
+                        <!-- 统计概览卡片 -->
+                        <div class="stats-grid">
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-total">🎼</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">无损音频总数</span>
+                                    <span class="stat-value" id="stat-lossless-total">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-ok">💎</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">确认真无损</span>
+                                    <span class="stat-value" id="stat-lossless-true" style="color: var(--color-success);">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel highlight-warn">
+                                <div class="stat-icon icon-warn">⚠️</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">假无损 (320k 转压)</span>
+                                    <span class="stat-value" id="stat-lossless-fake">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel highlight-danger">
+                                <div class="stat-icon icon-error">🚫</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">劣质假无损 (128k)</span>
+                                    <span class="stat-value" id="stat-lossless-bad">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 进度指示条 -->
+                        <div id="lossless-progress-container" class="progress-panel glass-panel hidden">
+                            <div class="progress-header">
+                                <span class="progress-title" id="lossless-progress-text">正在分析音频频谱与频响截断...</span>
+                                <span class="progress-percent" id="lossless-progress-percent">0%</span>
+                            </div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="lossless-progress-bar"></div>
+                            </div>
+                            <div class="progress-sub" id="lossless-current-file">准备中...</div>
+                        </div>
+
+                        <!-- 结果列表 -->
+                        <div class="table-panel glass-panel">
+                            <div class="table-header">
+                                <div>
+                                    <h3>无损真伪分析列表</h3>
+                                    <span class="table-subtitle" id="lossless-record-count">共检测 0 首音频</span>
+                                </div>
+                                <div class="table-actions">
+                                    <select id="lossless-filter-select" class="select-input" style="width: 140px; padding: 6px 10px;">
+                                        <option value="all" selected>全部音频</option>
+                                        <option value="fake_only">⚠️ 仅看假无损</option>
+                                        <option value="true_only">💎 仅看真无损</option>
+                                    </select>
+                                    <input type="text" id="lossless-filter-query" class="input-search" placeholder="搜索文件名...">
+                                    <button id="btn-export-lossless-csv" class="btn btn-secondary btn-sm">
+                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                                        导出报告
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="table-container">
+                                <table class="data-table" id="table-lossless-records">
+                                    <thead>
+                                        <tr>
+                                            <th>音频文件</th>
+                                            <th>格式与规格</th>
+                                            <th>无损真实度判定</th>
+                                            <th>截断频率 (Cutoff)</th>
+                                            <th>置信度</th>
+                                            <th>频谱分析特征</th>
+                                            <th width="120">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="lossless-records-body">
+                                        <tr>
+                                            <td colspan="7" class="empty-state">
+                                                <div class="empty-icon">🎼</div>
+                                                <p>点击左侧“开始鉴别无损真伪”扫描曲库中的 FLAC / APE 文件</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 全局音频试听条 -->
+        <div id="audio-player-bar" class="audio-player-bar glass-panel hidden">
+            <div class="player-info">
+                <div class="player-icon">🎵</div>
+                <div class="player-meta">
+                    <span class="player-title" id="player-track-name">未选择音频</span>
+                    <span class="player-path" id="player-track-path"></span>
+                </div>
+            </div>
+            <audio id="global-audio-element" controls preload="none"></audio>
+            <button id="btn-close-player" class="btn-icon" title="关闭播放器">✕</button>
+        </div>
+    </div>
+
+    <!-- 弹窗与 Toast 容器 -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>

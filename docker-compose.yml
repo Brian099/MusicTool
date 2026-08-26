@@ -1,0 +1,23 @@
+services:
+  music-toolkit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: music-toolkit:latest
+    container_name: music_toolkit
+    restart: unless-stopped
+    ports:
+      - "6826:6826"
+    volumes:
+      # 挂载您的音乐库目录 (只读/读写)
+      - /path/to/your/music:/music
+      # 异常导出与回收站目录
+      - ./output:/output
+      # 数据库与指纹持久化目录
+      - ./data:/data
+    environment:
+      - MUSIC_DIR=/music
+      - OUTPUT_DIR=/output
+      - DB_PATH=/data/music_toolkit.db
+      - MAX_WORKERS=4
+      - PORT=6826

@@ -1,0 +1,20 @@
+[Unit]
+Description=Music Toolkit Web Service
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/music-toolkit
+ExecStart=/opt/music-toolkit/music-toolkit-linux-amd64
+Restart=always
+RestartSec=5s
+
+Environment=MUSIC_DIR=/mnt/music
+Environment=OUTPUT_DIR=/opt/music-toolkit/output
+Environment=DB_PATH=/opt/music-toolkit/data/music_toolkit.db
+Environment=PORT=6826
+Environment=MAX_WORKERS=4
+
+[Install]
+WantedBy=multi-user.target

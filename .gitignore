@@ -1,0 +1,20 @@
+# 二进制产物 (由 GitHub Actions 自动编译构建)
+music-toolkit
+music-toolkit.exe
+music-toolkit-linux-*
+*.exe
+
+# 运行时数据与输出目录
+data/
+output/
+_recycle_bin/
+*.db
+*.db-wal
+*.db-shm
+*.log
+
+# IDE 与系统文件
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
