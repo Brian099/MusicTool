@@ -783,7 +783,7 @@ body.dark-theme .data-table td {
 .action-cell {
     white-space: nowrap;
     text-align: right;
-    min-width: 150px;
+    min-width: 160px;
 }
 
 .action-btn-group {
@@ -792,6 +792,7 @@ body.dark-theme .data-table td {
     justify-content: flex-end;
     gap: 8px;
     flex-wrap: nowrap;
+    white-space: nowrap;
 }
 
 .badge-fmt {

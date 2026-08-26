@@ -570,7 +570,7 @@ function renderFormatTable(query = '') {
                 <td><strong style="color: var(--color-success); font-family: var(--font-mono);">${r.suggested_ext}</strong></td>
                 <td style="font-size: 12px; color: var(--text-muted);">${escapeHtml(r.details)}</td>
                 <td><span style="font-size: 11px; color: var(--text-sub);">${escapeHtml(r.status || '-')}</span></td>
-                <td>
+                <td class="action-cell">
                     <div class="action-btn-group">
                         <button class="btn btn-success btn-sm" onclick="handleSingleFormatAction('${encPath}', 'rename_fix', '${r.suggested_ext}')" title="原地修改/修正后缀">
                             ✏️ 修正
@@ -892,13 +892,15 @@ function renderDuplicateGroups() {
                                             <span>${formatBytes(s.file_size)}</span>
                                         </div>
                                     </td>
-                                    <td width="140" style="text-align: right;">
-                                        <button class="btn btn-secondary btn-sm" onclick="playAudio('${encodeURIComponent(s.file_path)}', '${escapeHtml(s.file_name)}')" title="试听音频">
-                                            ▶ 试听
-                                        </button>
-                                        <button class="btn btn-danger-outline btn-sm" onclick="cleanSingleFile('${encodeURIComponent(s.file_path)}')" title="移入回收站">
-                                            ♻️
-                                        </button>
+                                    <td class="action-cell">
+                                        <div class="action-btn-group">
+                                            <button class="btn btn-secondary btn-sm" onclick="playAudio('${encodeURIComponent(s.file_path)}', '${escapeHtml(s.file_name)}')" title="试听音频">
+                                                ▶ 试听
+                                            </button>
+                                            <button class="btn btn-danger-outline btn-sm" onclick="cleanSingleFile('${encodeURIComponent(s.file_path)}')" title="移入回收站">
+                                                ♻️ 回收
+                                            </button>
+                                        </div>
                                     </td>
                                 </tr>
                             `;
