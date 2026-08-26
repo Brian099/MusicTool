@@ -80,40 +80,20 @@
                     <!-- 控制侧边栏 -->
                     <div class="control-panel glass-panel">
                         <div class="panel-header">
-                            <h2>格式检查配置</h2>
-                            <p class="subtitle">检测真实音频格式与后缀不一致、下载损坏或防盗链网页伪装文件</p>
+                            <h2>格式一致性检测</h2>
+                            <p class="subtitle">全面检测真实音频格式与后缀不一致、下载损坏或防盗链网页伪装文件</p>
                         </div>
 
                         <form id="form-format-scan" class="config-form">
                             <div class="form-group">
                                 <label for="fmt-music-dir">待扫描音乐目录</label>
-                                <input type="text" id="fmt-music-dir" class="input-text" placeholder="/music">
-                            </div>
-
-                            <div class="form-group">
-                                <label for="fmt-action">处理动作</label>
-                                <select id="fmt-action" class="select-input">
-                                    <option value="scan" selected>🔍 仅扫描并输出报告（不修改文件）</option>
-                                    <option value="rename_fix">✏️ 原地直接纠正后缀（如 .mp3 -> .m4a）</option>
-                                    <option value="copy">📋 复制不一致文件到输出目录</option>
-                                    <option value="move">📦 移动不一致文件到输出目录</option>
-                                </select>
-                            </div>
-
-                            <div class="form-group">
-                                <label for="fmt-output-dir">异常文件输出目录</label>
-                                <input type="text" id="fmt-output-dir" class="input-text" placeholder="/output">
-                            </div>
-
-                            <div class="form-row">
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="fmt-keep-structure" checked>
-                                    <span>保留相对文件夹层级</span>
-                                </label>
-                                <label class="checkbox-label">
-                                    <input type="checkbox" id="fmt-fix-ext" checked>
-                                    <span>导出时修正为真实后缀</span>
-                                </label>
+                                <div class="input-with-action">
+                                    <input type="text" id="fmt-music-dir" class="input-text" placeholder="/music">
+                                    <button type="button" class="btn-input-refresh" id="btn-refresh-fmt-dir" title="重新查询该目录音乐数量">🔄</button>
+                                </div>
+                                <div class="dir-stats-badge" id="fmt-dir-stats">
+                                    <span class="stats-loading">🔍 正在查询目录音频文件...</span>
+                                </div>
                             </div>
 
                             <div class="form-group">
@@ -126,6 +106,19 @@
                                 <span>开始扫描检测</span>
                             </button>
                         </form>
+
+                        <div class="divider"></div>
+
+                        <div class="smart-clean-box" style="background: rgba(124, 58, 237, 0.06); border-color: rgba(124, 58, 237, 0.2);">
+                            <h3 style="color: var(--accent-primary);">💡 检测后处置流程</h3>
+                            <p>扫描仅探测真实音频流，不修改原始文件。扫描完成后，您可以在右侧结果列表中按需对异常音频执行：</p>
+                            <ul style="font-size: 11px; color: var(--text-muted); padding-left: 16px; line-height: 1.7;">
+                                <li><strong>✏️ 修改（修正后缀）</strong>：原地将后缀更正为探测到的真实格式。</li>
+                                <li><strong>📋 复制</strong>：将异常音频复制到输出目录进行归档或备份。</li>
+                                <li><strong>📦 移动</strong>：将异常音频移动隔离到指定输出目录。</li>
+                                <li><strong>🗑️ 删除/回收</strong>：安全移入回收站或彻底永久删除。</li>
+                            </ul>
+                        </div>
                     </div>
 
                     <!-- 结果展示区 -->
@@ -183,14 +176,24 @@
                                 </div>
                                 <div class="table-actions">
                                     <input type="text" id="fmt-filter-query" class="input-search" placeholder="搜索文件名或格式...">
-                                    <button id="btn-export-csv" class="btn btn-secondary btn-sm">
+                                    <button id="btn-export-csv" class="btn btn-secondary btn-sm" title="导出检测结果为 CSV">
                                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                                        导出 CSV 报告
+                                        导出 CSV
                                     </button>
-                                    <button id="btn-batch-fix-rename" class="btn btn-success btn-sm">
-                                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                                        批量修正后缀
-                                    </button>
+                                    <div class="btn-group-actions">
+                                        <button id="btn-batch-fix-rename" class="btn btn-success btn-sm" title="将选中文件原地修正后缀">
+                                            ✏️ 批量修正
+                                        </button>
+                                        <button id="btn-batch-copy" class="btn btn-secondary btn-sm" title="将选中文件复制到输出目录">
+                                            📋 批量复制
+                                        </button>
+                                        <button id="btn-batch-move" class="btn btn-secondary btn-sm" title="将选中文件移动到输出目录">
+                                            📦 批量移动
+                                        </button>
+                                        <button id="btn-batch-delete" class="btn btn-danger-outline btn-sm" title="清理选中的异常音频">
+                                            🗑️ 批量清理
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
 
@@ -205,7 +208,7 @@
                                             <th>建议后缀</th>
                                             <th>探测详情</th>
                                             <th>状态</th>
-                                            <th width="120">操作</th>
+                                            <th width="200">操作</th>
                                         </tr>
                                     </thead>
                                     <tbody id="fmt-records-body">
@@ -236,7 +239,13 @@
                         <div class="config-form">
                             <div class="form-group">
                                 <label for="dedup-music-dir">扫描音乐目录</label>
-                                <input type="text" id="dedup-music-dir" class="input-text" placeholder="/music">
+                                <div class="input-with-action">
+                                    <input type="text" id="dedup-music-dir" class="input-text" placeholder="/music">
+                                    <button type="button" class="btn-input-refresh" id="btn-refresh-dedup-dir" title="重新查询该目录音乐数量">🔄</button>
+                                </div>
+                                <div class="dir-stats-badge" id="dedup-dir-stats">
+                                    <span class="stats-loading">🔍 正在查询目录音频文件...</span>
+                                </div>
                             </div>
 
                             <div class="form-group">
@@ -363,9 +372,15 @@
 
                         <form id="form-lossless-scan" class="config-form">
                             <div class="form-group">
-                                <label for="lossless-music-dir">待检测目录</label>
-                                <input type="text" id="lossless-music-dir" class="input-text" placeholder="/music">
-                                <span class="input-hint">将自动筛选目录中所有的 .flac, .ape, .wav, .alac 格式</span>
+                                 <label for="lossless-music-dir">待检测目录</label>
+                                 <div class="input-with-action">
+                                     <input type="text" id="lossless-music-dir" class="input-text" placeholder="/music">
+                                     <button type="button" class="btn-input-refresh" id="btn-refresh-lossless-dir" title="重新查询该目录音乐数量">🔄</button>
+                                 </div>
+                                 <div class="dir-stats-badge" id="lossless-dir-stats">
+                                     <span class="stats-loading">🔍 正在查询目录音频文件...</span>
+                                 </div>
+                                 <span class="input-hint">将自动筛选目录中所有的 .flac, .ape, .wav, .alac 格式</span>
                             </div>
 
                             <div class="form-group">
@@ -499,6 +514,47 @@
             </div>
             <audio id="global-audio-element" controls preload="none"></audio>
             <button id="btn-close-player" class="btn-icon" title="关闭播放器">✕</button>
+        </div>
+    </div>
+
+    <!-- 通用操作模态框 (Modal) -->
+    <div id="action-modal" class="modal-overlay hidden">
+        <div class="modal-card glass-panel">
+            <div class="modal-header">
+                <h3 id="modal-title">复制文件配置</h3>
+                <button id="btn-modal-close" class="btn-icon" title="关闭">✕</button>
+            </div>
+            <div class="modal-body">
+                <p class="modal-desc" id="modal-desc">即将处理 1 个文件</p>
+                <div class="form-group" id="modal-group-output-dir">
+                    <label for="modal-output-dir">目标输出目录</label>
+                    <input type="text" id="modal-output-dir" class="input-text" placeholder="/output">
+                </div>
+                <div class="form-row" id="modal-group-options">
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="modal-keep-structure" checked>
+                        <span>保留相对文件夹层级结构</span>
+                    </label>
+                    <label class="checkbox-label">
+                        <input type="checkbox" id="modal-fix-ext" checked>
+                        <span>导出时自动修正为真实后缀</span>
+                    </label>
+                </div>
+                <div id="modal-delete-options" class="form-group hidden">
+                    <label class="radio-label">
+                        <input type="radio" name="modal-delete-type" value="recycle" checked>
+                        <span>♻️ 移入安全回收站 (推荐，保留在 output/_recycle_bin)</span>
+                    </label>
+                    <label class="radio-label">
+                        <input type="radio" name="modal-delete-type" value="delete">
+                        <span style="color: var(--color-danger); font-weight: 600;">🗑️ 彻底删除 (不可恢复)</span>
+                    </label>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-modal-cancel" class="btn btn-secondary btn-sm">取消</button>
+                <button id="btn-modal-confirm" class="btn btn-primary btn-sm">确认执行</button>
+            </div>
         </div>
     </div>
 

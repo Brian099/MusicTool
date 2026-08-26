@@ -355,6 +355,28 @@ func (d *DB) ClearFormatRecords(ctx context.Context) error {
 	return err
 }
 
+// DeleteFormatRecord 删除单条格式检测记录
+func (d *DB) DeleteFormatRecord(ctx context.Context, filePath string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	_, err := d.db.ExecContext(ctx, "DELETE FROM format_records WHERE file_path = ?", filePath)
+	return err
+}
+
+// DeleteFormatRecords 批量删除格式检测记录
+func (d *DB) DeleteFormatRecords(ctx context.Context, filePaths []string) error {
+	if len(filePaths) == 0 {
+		return nil
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, fp := range filePaths {
+		d.db.ExecContext(ctx, "DELETE FROM format_records WHERE file_path = ?", fp)
+	}
+	return nil
+}
+
 // UpsertLosslessRecord 插入或更新真假无损检测记录
 func (d *DB) UpsertLosslessRecord(ctx context.Context, r *LosslessRecord) error {
 	d.mu.Lock()

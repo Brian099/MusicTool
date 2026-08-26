@@ -82,11 +82,14 @@ func (s *Server) Handler() http.Handler {
 
 	// API 路由
 	mux.HandleFunc("GET /api/system/status", s.handleSystemStatus)
+	mux.HandleFunc("GET /api/system/dir-stats", s.handleDirStats)
 	mux.HandleFunc("POST /api/format/scan", s.handleFormatScan)
 	mux.HandleFunc("GET /api/format/progress", s.handleFormatProgress)
 	mux.HandleFunc("GET /api/format/records", s.handleFormatRecords)
-	mux.HandleFunc("POST /api/format/fix-single", s.handleFormatFixSingle)
-	mux.HandleFunc("POST /api/format/fix-batch", s.handleFormatFixBatch)
+	mux.HandleFunc("POST /api/format/action-single", s.handleFormatActionSingle)
+	mux.HandleFunc("POST /api/format/action-batch", s.handleFormatActionBatch)
+	mux.HandleFunc("POST /api/format/fix-single", s.handleFormatActionSingle)
+	mux.HandleFunc("POST /api/format/fix-batch", s.handleFormatActionBatch)
 	mux.HandleFunc("GET /api/format/export", s.handleFormatExport)
 
 	mux.HandleFunc("POST /api/dedup/compute", s.handleDedupCompute)
@@ -169,12 +172,70 @@ func collectAudioFiles(targetDir, outputDir string) []string {
 	return list
 }
 
-// ----------------- 系统状态 -----------------
+// DirStats 目录统计信息
+type DirStats struct {
+	Path         string         `json:"path"`
+	Exists       bool           `json:"exists"`
+	TotalFiles   int            `json:"total_files"`
+	TotalSize    int64          `json:"total_size"`
+	FormatCounts map[string]int `json:"format_counts"`
+}
+
+func scanDirStats(targetDir, outputDir string) DirStats {
+	absTarget, _ := filepath.Abs(targetDir)
+	absOutput, _ := filepath.Abs(outputDir)
+
+	stats := DirStats{
+		Path:         targetDir,
+		FormatCounts: make(map[string]int),
+	}
+
+	fi, err := os.Stat(absTarget)
+	if os.IsNotExist(err) || fi == nil || !fi.IsDir() {
+		stats.Exists = false
+		return stats
+	}
+	stats.Exists = true
+
+	filepath.Walk(absTarget, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info == nil {
+			return nil
+		}
+		absPath, _ := filepath.Abs(path)
+		if info.IsDir() {
+			if absPath == absOutput || strings.HasPrefix(absPath, absOutput+string(os.PathSeparator)) {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+
+		ext := strings.ToLower(filepath.Ext(path))
+		if config.DefaultAudioExtensions[ext] {
+			stats.TotalFiles++
+			stats.TotalSize += info.Size()
+			stats.FormatCounts[ext]++
+		}
+		return nil
+	})
+
+	return stats
+}
+
+// ----------------- 系统状态与目录查询 -----------------
+
+func (s *Server) handleDirStats(w http.ResponseWriter, r *http.Request) {
+	dirPath := r.URL.Query().Get("path")
+	if dirPath == "" {
+		dirPath = s.cfg.MusicDir
+	}
+	stats := scanDirStats(dirPath, s.cfg.OutputDir)
+	writeJSON(w, http.StatusOK, stats)
+}
 
 func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	_, ffmpegErr := exec.LookPath(s.cfg.FFmpegPath)
 	chromaOk := deduplicator.IsChromaprintAvailable(s.cfg.FFmpegPath)
-	_, musicErr := os.Stat(s.cfg.MusicDir)
+	musicStats := scanDirStats(s.cfg.MusicDir, s.cfg.OutputDir)
 
 	s.mu.Lock()
 	fmtProg := s.formatProg
@@ -184,10 +245,11 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"music_dir":        s.cfg.MusicDir,
-		"music_dir_exists": musicErr == nil,
+		"music_dir_exists": musicStats.Exists,
 		"output_dir":       s.cfg.OutputDir,
 		"has_ffmpeg":       ffmpegErr == nil,
 		"has_chromaprint":  chromaOk,
+		"music_stats":      musicStats,
 		"tasks": map[string]any{
 			"format_scan":   fmtProg,
 			"dedup_compute": dedupProg,
@@ -199,20 +261,13 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 // ----------------- 格式检查 -----------------
 
 type FormatScanReq struct {
-	MusicDir      string `json:"music_dir"`
-	OutputDir     string `json:"output_dir"`
-	Action        string `json:"action"`
-	KeepStructure bool   `json:"keep_structure"`
-	FixExtension  bool   `json:"fix_extension"`
-	Workers       int    `json:"workers"`
+	MusicDir string `json:"music_dir"`
+	Workers  int    `json:"workers"`
 }
 
 func (s *Server) handleFormatScan(w http.ResponseWriter, r *http.Request) {
 	var req FormatScanReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		req.Action = "scan"
-		req.KeepStructure = true
-		req.FixExtension = true
 		req.Workers = 4
 	}
 
@@ -237,16 +292,12 @@ func (s *Server) runFormatScanAsync(req FormatScanReq) {
 	if scanDir == "" {
 		scanDir = s.cfg.MusicDir
 	}
-	outDir := req.OutputDir
-	if outDir == "" {
-		outDir = s.cfg.OutputDir
-	}
 	workers := req.Workers
 	if workers <= 0 {
 		workers = s.cfg.MaxWorkers
 	}
 
-	files := collectAudioFiles(scanDir, outDir)
+	files := collectAudioFiles(scanDir, s.cfg.OutputDir)
 
 	s.mu.Lock()
 	s.formatProg.Total = int64(len(files))
@@ -281,14 +332,7 @@ func (s *Server) runFormatScanAsync(req FormatScanReq) {
 				}
 
 				statusMsg := "ok"
-				if det.IsMismatch && (req.Action == "copy" || req.Action == "move" || req.Action == "rename_fix") {
-					success, _, msg := s.fileOp.ProcessMismatched(fp, outDir, req.Action, req.KeepStructure, req.FixExtension, det.SuggestedExt, scanDir)
-					if success {
-						statusMsg = req.Action + ": " + msg
-					} else {
-						statusMsg = "failed: " + msg
-					}
-				} else if det.IsMismatch {
+				if det.IsMismatch {
 					statusMsg = "detected"
 				}
 
@@ -380,46 +424,113 @@ func (s *Server) handleFormatRecords(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type FixSingleReq struct {
-	FilePath     string `json:"file_path"`
-	Action       string `json:"action"`
-	SuggestedExt string `json:"suggested_ext"`
+type FormatActionReq struct {
+	FilePath      string `json:"file_path"`
+	Action        string `json:"action"` // rename_fix, copy, move, recycle, delete
+	OutputDir     string `json:"output_dir,omitempty"`
+	KeepStructure bool   `json:"keep_structure"`
+	FixExtension  bool   `json:"fix_extension"`
+	SuggestedExt  string `json:"suggested_ext,omitempty"`
 }
 
-func (s *Server) handleFormatFixSingle(w http.ResponseWriter, r *http.Request) {
-	var req FixSingleReq
+func (s *Server) handleFormatActionSingle(w http.ResponseWriter, r *http.Request) {
+	var req FormatActionReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json", 400)
 		return
 	}
 
-	success, tgt, msg := s.fileOp.ProcessMismatched(req.FilePath, s.cfg.OutputDir, req.Action, true, true, req.SuggestedExt, s.cfg.MusicDir)
-	if !success {
-		http.Error(w, fmt.Sprintf(`{"detail":"%s"}`, msg), 400)
+	outDir := req.OutputDir
+	if outDir == "" {
+		outDir = s.cfg.OutputDir
+	}
+
+	var success bool
+	var tgt, msg string
+
+	switch req.Action {
+	case "rename_fix":
+		suggested := req.SuggestedExt
+		if suggested == "" {
+			det := s.detector.CheckFile(req.FilePath)
+			suggested = det.SuggestedExt
+		}
+		success, tgt, msg = s.fileOp.RenameInPlace(req.FilePath, suggested)
+		if success {
+			s.db.DeleteFormatRecord(r.Context(), req.FilePath)
+			if _, err := os.Stat(tgt); err == nil {
+				det := s.detector.CheckFile(tgt)
+				fi, _ := os.Stat(tgt)
+				s.db.UpsertFormatRecord(r.Context(), &database.FormatRecord{
+					FilePath:       tgt,
+					FileName:       det.FileName,
+					MTime:          float64(fi.ModTime().UnixNano()) / 1e9,
+					FileSize:       fi.Size(),
+					CurrentExt:     det.CurrentExt,
+					DetectedFormat: det.DetectedFormat,
+					SuggestedExt:   det.SuggestedExt,
+					IsMismatch:     0,
+					IsAudio:        1,
+					Details:        det.Details,
+					Status:         "后缀已修正",
+					UpdatedAt:      time.Now().Unix(),
+				})
+			}
+		}
+	case "copy":
+		suggested := req.SuggestedExt
+		if suggested == "" {
+			det := s.detector.CheckFile(req.FilePath)
+			suggested = det.SuggestedExt
+		}
+		success, tgt, msg = s.fileOp.ProcessMismatched(req.FilePath, outDir, "copy", req.KeepStructure, req.FixExtension, suggested, s.cfg.MusicDir)
+		if success {
+			if fi, err := os.Stat(req.FilePath); err == nil {
+				det := s.detector.CheckFile(req.FilePath)
+				s.db.UpsertFormatRecord(r.Context(), &database.FormatRecord{
+					FilePath:       req.FilePath,
+					FileName:       det.FileName,
+					MTime:          float64(fi.ModTime().UnixNano()) / 1e9,
+					FileSize:       fi.Size(),
+					CurrentExt:     det.CurrentExt,
+					DetectedFormat: det.DetectedFormat,
+					SuggestedExt:   det.SuggestedExt,
+					IsMismatch:     1,
+					IsAudio:        1,
+					Details:        det.Details,
+					Status:         "已复制到: " + filepath.Base(tgt),
+					UpdatedAt:      time.Now().Unix(),
+				})
+			}
+		}
+	case "move":
+		suggested := req.SuggestedExt
+		if suggested == "" {
+			det := s.detector.CheckFile(req.FilePath)
+			suggested = det.SuggestedExt
+		}
+		success, tgt, msg = s.fileOp.ProcessMismatched(req.FilePath, outDir, "move", req.KeepStructure, req.FixExtension, suggested, s.cfg.MusicDir)
+		if success {
+			s.db.DeleteFormatRecord(r.Context(), req.FilePath)
+		}
+	case "recycle":
+		success, tgt, msg = s.fileOp.MoveToRecycleBin(req.FilePath, "")
+		if success {
+			s.db.DeleteFormatRecord(r.Context(), req.FilePath)
+		}
+	case "delete":
+		success, tgt, msg = s.fileOp.DeletePermanently(req.FilePath)
+		if success {
+			s.db.DeleteFormatRecord(r.Context(), req.FilePath)
+		}
+	default:
+		http.Error(w, `{"detail":"未知操作类型"}`, 400)
 		return
 	}
 
-	finalPath := req.FilePath
-	if tgt != "" {
-		finalPath = tgt
-	}
-	if _, err := os.Stat(finalPath); err == nil {
-		det := s.detector.CheckFile(finalPath)
-		fi, _ := os.Stat(finalPath)
-		s.db.UpsertFormatRecord(r.Context(), &database.FormatRecord{
-			FilePath:       finalPath,
-			FileName:       det.FileName,
-			MTime:          float64(fi.ModTime().UnixNano()) / 1e9,
-			FileSize:       fi.Size(),
-			CurrentExt:     det.CurrentExt,
-			DetectedFormat: det.DetectedFormat,
-			SuggestedExt:   det.SuggestedExt,
-			IsMismatch:     0,
-			IsAudio:        1,
-			Details:        det.Details,
-			Status:         req.Action + " done",
-			UpdatedAt:      time.Now().Unix(),
-		})
+	if !success {
+		http.Error(w, fmt.Sprintf(`{"detail":"%s"}`, msg), 400)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -429,36 +540,110 @@ func (s *Server) handleFormatFixSingle(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-type FixBatchReq struct {
-	FilePaths []string `json:"file_paths"`
-	Action    string   `json:"action"`
+type FormatBatchActionReq struct {
+	FilePaths     []string `json:"file_paths"`
+	Action        string   `json:"action"` // rename_fix, copy, move, recycle, delete
+	OutputDir     string   `json:"output_dir,omitempty"`
+	KeepStructure bool   `json:"keep_structure"`
+	FixExtension  bool   `json:"fix_extension"`
 }
 
-func (s *Server) handleFormatFixBatch(w http.ResponseWriter, r *http.Request) {
-	var req FixBatchReq
+func (s *Server) handleFormatActionBatch(w http.ResponseWriter, r *http.Request) {
+	var req FormatBatchActionReq
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid json", 400)
 		return
 	}
 
-	type fixResult struct {
+	outDir := req.OutputDir
+	if outDir == "" {
+		outDir = s.cfg.OutputDir
+	}
+
+	type actionResult struct {
 		FilePath string `json:"file_path"`
 		Success  bool   `json:"success"`
 		Target   string `json:"target"`
 		Message  string `json:"msg"`
 	}
-	var results []fixResult
+	var results []actionResult
 
 	for _, fp := range req.FilePaths {
 		det := s.detector.CheckFile(fp)
-		success, tgt, msg := s.fileOp.ProcessMismatched(fp, s.cfg.OutputDir, req.Action, true, true, det.SuggestedExt, s.cfg.MusicDir)
-		results = append(results, fixResult{
+		var success bool
+		var tgt, msg string
+
+		switch req.Action {
+		case "rename_fix":
+			success, tgt, msg = s.fileOp.RenameInPlace(fp, det.SuggestedExt)
+			if success {
+				s.db.DeleteFormatRecord(r.Context(), fp)
+				if _, err := os.Stat(tgt); err == nil {
+					detNew := s.detector.CheckFile(tgt)
+					fi, _ := os.Stat(tgt)
+					s.db.UpsertFormatRecord(r.Context(), &database.FormatRecord{
+						FilePath:       tgt,
+						FileName:       detNew.FileName,
+						MTime:          float64(fi.ModTime().UnixNano()) / 1e9,
+						FileSize:       fi.Size(),
+						CurrentExt:     detNew.CurrentExt,
+						DetectedFormat: detNew.DetectedFormat,
+						SuggestedExt:   detNew.SuggestedExt,
+						IsMismatch:     0,
+						IsAudio:        1,
+						Details:        detNew.Details,
+						Status:         "后缀已修正",
+						UpdatedAt:      time.Now().Unix(),
+					})
+				}
+			}
+		case "copy":
+			success, tgt, msg = s.fileOp.ProcessMismatched(fp, outDir, "copy", req.KeepStructure, req.FixExtension, det.SuggestedExt, s.cfg.MusicDir)
+			if success {
+				if fi, err := os.Stat(fp); err == nil {
+					s.db.UpsertFormatRecord(r.Context(), &database.FormatRecord{
+						FilePath:       fp,
+						FileName:       det.FileName,
+						MTime:          float64(fi.ModTime().UnixNano()) / 1e9,
+						FileSize:       fi.Size(),
+						CurrentExt:     det.CurrentExt,
+						DetectedFormat: det.DetectedFormat,
+						SuggestedExt:   det.SuggestedExt,
+						IsMismatch:     1,
+						IsAudio:        1,
+						Details:        det.Details,
+						Status:         "已复制到: " + filepath.Base(tgt),
+						UpdatedAt:      time.Now().Unix(),
+					})
+				}
+			}
+		case "move":
+			success, tgt, msg = s.fileOp.ProcessMismatched(fp, outDir, "move", req.KeepStructure, req.FixExtension, det.SuggestedExt, s.cfg.MusicDir)
+			if success {
+				s.db.DeleteFormatRecord(r.Context(), fp)
+			}
+		case "recycle":
+			success, tgt, msg = s.fileOp.MoveToRecycleBin(fp, "")
+			if success {
+				s.db.DeleteFormatRecord(r.Context(), fp)
+			}
+		case "delete":
+			success, tgt, msg = s.fileOp.DeletePermanently(fp)
+			if success {
+				s.db.DeleteFormatRecord(r.Context(), fp)
+			}
+		default:
+			success, tgt, msg = false, "", "未知操作类型"
+		}
+
+		results = append(results, actionResult{
 			FilePath: fp,
 			Success:  success,
 			Target:   tgt,
 			Message:  msg,
 		})
 	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"total":   len(req.FilePaths),
 		"results": results,

@@ -198,3 +198,54 @@ func TestServerRoutingInitialization(t *testing.T) {
 		t.Fatalf("list lossless records failed: %v, list: %+v", err, list)
 	}
 }
+
+func TestFormatActionsAPI(t *testing.T) {
+	tempDir, _ := os.MkdirTemp("", "format_action_test_*")
+	defer os.RemoveAll(tempDir)
+	outDir := filepath.Join(tempDir, "output")
+	db, _ := database.OpenDB(filepath.Join(tempDir, "test.db"))
+	defer db.Close()
+
+	cfg := &config.Config{
+		MusicDir:  tempDir,
+		OutputDir: outDir,
+		Port:      6826,
+	}
+	frontendFS := GetFrontendFileSystem()
+	srv := server.NewServer(cfg, db, frontendFS)
+	_ = srv
+
+	// 创建测试 FLAC 文件伪装成 .mp3
+	flacHeader := []byte("fLaC\x00\x00\x00\x22\x10\x00\x10\x00")
+	fakeFile := filepath.Join(tempDir, "fake_song.mp3")
+	os.WriteFile(fakeFile, flacHeader, 0644)
+
+	// 插入一条初始 format_record
+	ctx := context.Background()
+	db.UpsertFormatRecord(ctx, &database.FormatRecord{
+		FilePath:       fakeFile,
+		FileName:       "fake_song.mp3",
+		CurrentExt:     ".mp3",
+		DetectedFormat: "flac",
+		SuggestedExt:   ".flac",
+		IsMismatch:     1,
+		IsAudio:        1,
+		Details:        "FLAC 无损音频",
+		Status:         "detected",
+		UpdatedAt:      123456,
+	})
+
+	records, _ := db.ListFormatRecords(ctx)
+	if len(records) != 1 || records[0].IsMismatch != 1 {
+		t.Fatalf("expected 1 mismatch record, got %d", len(records))
+	}
+
+	// 测试数据库 DeleteFormatRecord
+	if err := db.DeleteFormatRecord(ctx, fakeFile); err != nil {
+		t.Fatalf("DeleteFormatRecord failed: %v", err)
+	}
+	recordsAfter, _ := db.ListFormatRecords(ctx)
+	if len(recordsAfter) != 0 {
+		t.Fatalf("expected 0 records after delete, got %d", len(recordsAfter))
+	}
+}
