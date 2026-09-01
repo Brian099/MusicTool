@@ -77,6 +77,18 @@ type PlaylistHistoryRecord struct {
 	CreatedAt int64  `json:"created_at"`
 }
 
+// FeiNiuConfigRecord 飞牛 NAS 连接与鉴权凭据记录
+type FeiNiuConfigRecord struct {
+	ID           int    `json:"id"`
+	ServerURL    string `json:"server_url"`
+	Username     string `json:"username"`
+	PasswordHash string `json:"password_hash"`
+	DeviceID     string `json:"device_id"`
+	AccessCode   string `json:"access_code"`
+	UserToken    string `json:"user_token"`
+	UpdatedAt    int64  `json:"updated_at"`
+}
+
 // DB 数据库操作句柄
 type DB struct {
 	db *sql.DB
@@ -177,6 +189,17 @@ func (d *DB) initSchema() error {
 		created_at INTEGER
 	);
 	CREATE INDEX IF NOT EXISTS idx_playlist_created ON playlist_history(created_at DESC);
+
+	CREATE TABLE IF NOT EXISTS feiniu_config (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		server_url TEXT,
+		username TEXT,
+		password_hash TEXT,
+		device_id TEXT,
+		access_code TEXT,
+		user_token TEXT,
+		updated_at INTEGER
+	);
 	`
 	_, err := d.db.Exec(schema)
 	return err
@@ -546,4 +569,60 @@ func (d *DB) ClearPlaylistHistory(ctx context.Context) error {
 	_, err := d.db.ExecContext(ctx, "DELETE FROM playlist_history")
 	return err
 }
+
+// GetFeiNiuConfig 获取飞牛 NAS 连接凭据配置
+func (d *DB) GetFeiNiuConfig(ctx context.Context) (*FeiNiuConfigRecord, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	query := `SELECT id, server_url, username, password_hash, device_id, access_code, user_token, updated_at 
+	          FROM feiniu_config WHERE id = 1`
+	row := d.db.QueryRowContext(ctx, query)
+
+	var r FeiNiuConfigRecord
+	if err := row.Scan(&r.ID, &r.ServerURL, &r.Username, &r.PasswordHash, &r.DeviceID, &r.AccessCode, &r.UserToken, &r.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &r, nil
+}
+
+// SaveFeiNiuConfig 保存或更新飞牛 NAS 连接凭据配置
+func (d *DB) SaveFeiNiuConfig(ctx context.Context, cfg *FeiNiuConfigRecord) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	query := `INSERT INTO feiniu_config (id, server_url, username, password_hash, device_id, access_code, user_token, updated_at)
+	          VALUES (1, ?, ?, ?, ?, ?, ?, ?)
+	          ON CONFLICT(id) DO UPDATE SET
+	              server_url = excluded.server_url,
+	              username = excluded.username,
+	              password_hash = excluded.password_hash,
+	              device_id = excluded.device_id,
+	              access_code = excluded.access_code,
+	              user_token = excluded.user_token,
+	              updated_at = excluded.updated_at`
+	_, err := d.db.ExecContext(ctx, query,
+		cfg.ServerURL,
+		cfg.Username,
+		cfg.PasswordHash,
+		cfg.DeviceID,
+		cfg.AccessCode,
+		cfg.UserToken,
+		cfg.UpdatedAt,
+	)
+	return err
+}
+
+// ClearFeiNiuConfig 清空飞牛凭据配置
+func (d *DB) ClearFeiNiuConfig(ctx context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.ExecContext(ctx, "DELETE FROM feiniu_config WHERE id = 1")
+	return err
+}
+
 

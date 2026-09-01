@@ -249,3 +249,56 @@ func TestFormatActionsAPI(t *testing.T) {
 		t.Fatalf("expected 0 records after delete, got %d", len(recordsAfter))
 	}
 }
+
+func TestFeiNiuDatabaseAndServerAPI(t *testing.T) {
+	tempDir, _ := os.MkdirTemp("", "feiniu_test_*")
+	defer os.RemoveAll(tempDir)
+	db, err := database.OpenDB(filepath.Join(tempDir, "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// 1. 初始应无配置
+	cfg, err := db.GetFeiNiuConfig(ctx)
+	if err != nil || cfg != nil {
+		t.Fatalf("expected nil config, got %v", cfg)
+	}
+
+	// 2. 保存配置
+	now := int64(1700000000)
+	err = db.SaveFeiNiuConfig(ctx, &database.FeiNiuConfigRecord{
+		ID:           1,
+		ServerURL:    "http://192.168.1.100:8000",
+		Username:     "admin",
+		PasswordHash: "mock-hash",
+		DeviceID:     "dev-123",
+		AccessCode:   "code-456",
+		UserToken:    "token-789",
+		UpdatedAt:    now,
+	})
+	if err != nil {
+		t.Fatalf("SaveFeiNiuConfig failed: %v", err)
+	}
+
+	// 3. 读取配置
+	savedCfg, err := db.GetFeiNiuConfig(ctx)
+	if err != nil || savedCfg == nil {
+		t.Fatalf("GetFeiNiuConfig failed: %v", err)
+	}
+	if savedCfg.Username != "admin" || savedCfg.UserToken != "token-789" {
+		t.Fatalf("unexpected saved config: %+v", savedCfg)
+	}
+
+	// 4. 清除配置
+	if err := db.ClearFeiNiuConfig(ctx); err != nil {
+		t.Fatalf("ClearFeiNiuConfig failed: %v", err)
+	}
+	clearedCfg, _ := db.GetFeiNiuConfig(ctx)
+	if clearedCfg != nil {
+		t.Fatalf("expected nil config after clear, got %+v", clearedCfg)
+	}
+}
+

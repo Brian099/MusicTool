@@ -46,6 +46,10 @@
                     <span class="dot"></span>
                     <span class="label" id="music-dir-label">/music</span>
                 </div>
+                <div class="chip" id="chip-feiniu" title="飞牛 NAS 音乐连接状态">
+                    <span class="dot"></span>
+                    <span class="label" id="feiniu-chip-label">飞牛NAS</span>
+                </div>
             </div>
 
             <div class="header-right-tools">
@@ -69,6 +73,11 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle><line x1="3" y1="6" x2="6" y2="6"></line><line x1="3" y1="10" x2="6" y2="10"></line></svg>
                         <span>歌单文本提取</span>
                         <span class="badge-accent">网易/QQ/汽水</span>
+                    </button>
+                    <button class="nav-tab" data-tab="tab-feiniu">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
+                        <span>飞牛歌单</span>
+                        <span class="badge-accent">FnOS NAS</span>
                     </button>
                 </nav>
 
@@ -638,6 +647,9 @@
                                         <button id="btn-pl-copy-all" class="btn btn-primary btn-sm" title="一键复制纯文本歌曲列表，方便直接粘贴迁移">
                                             📋 复制纯文本
                                         </button>
+                                        <button id="btn-pl-import-feiniu" class="btn btn-accent btn-sm" title="将提取结果一键导入并匹配到飞牛 NAS 歌单" style="background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 500;">
+                                            🐂 导入到飞牛歌单
+                                        </button>
                                         <button id="btn-pl-export-txt" class="btn btn-secondary btn-sm" title="导出为 .txt 文件">
                                             💾 导出 TXT
                                         </button>
@@ -712,6 +724,178 @@
                     </div>
                 </div>
             </section>
+
+            <!-- TAB 5: 飞牛音乐歌单管理器 (FnOS Music) -->
+            <section id="tab-feiniu" class="tab-content">
+                <div class="grid-layout">
+                    <!-- 控制侧边栏 -->
+                    <div class="control-panel glass-panel">
+                        <div class="panel-header">
+                            <h2>飞牛音乐管理</h2>
+                            <p class="subtitle">直连飞牛 FnOS 原生音乐服务，管理 NAS 歌单与自动匹配入库</p>
+                        </div>
+
+                        <!-- 飞牛 NAS 连接配置 -->
+                        <div class="feiniu-auth-box">
+                            <div class="box-header">
+                                <span class="box-title">🔐 飞牛 NAS 连接凭据</span>
+                                <span class="status-indicator-badge" id="fn-auth-status-badge">未连接</span>
+                            </div>
+
+                            <form id="form-feiniu-connect" class="config-form" style="margin-top: 10px;">
+                                <div class="form-group">
+                                    <label for="fn-server-url">飞牛 NAS 服务地址</label>
+                                    <input type="text" id="fn-server-url" class="input-text" placeholder="例如：http://192.168.1.100:8000" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fn-username">飞牛用户名</label>
+                                    <input type="text" id="fn-username" class="input-text" placeholder="例如：admin" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fn-password">登录密码</label>
+                                    <input type="password" id="fn-password" class="input-text" placeholder="飞牛系统登录密码" required>
+                                    <span class="input-hint">密码仅在本地生成 SHA-256 哈希传输并持久化，支持 401 自动无感重连</span>
+                                </div>
+                                <div class="form-group">
+                                    <label for="fn-access-code">安全码 (可选)</label>
+                                    <input type="password" id="fn-access-code" class="input-text" placeholder="若 NAS 开启了安全码保护请输入">
+                                </div>
+
+                                <div class="btn-group-row">
+                                    <button type="submit" id="btn-fn-connect" class="btn btn-primary" style="flex: 1;">
+                                        ⚡ 连接 / 重新登录
+                                    </button>
+                                    <button type="button" id="btn-fn-disconnect" class="btn btn-secondary btn-sm" title="断开连接并清除凭据">
+                                        断开
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="divider"></div>
+
+                        <!-- 快速新建歌单 -->
+                        <form id="form-fn-create-playlist" class="config-form">
+                            <div class="form-group">
+                                <label for="fn-new-pl-name">➕ 新建飞牛歌单</label>
+                                <div class="input-with-action">
+                                    <input type="text" id="fn-new-pl-name" class="input-text" placeholder="输入新歌单名称..." required>
+                                    <button type="submit" class="btn btn-primary btn-sm" id="btn-fn-create-pl">创建</button>
+                                </div>
+                            </div>
+                        </form>
+
+                        <div class="divider"></div>
+
+                        <!-- 飞牛联动使用说明 -->
+                        <div class="smart-clean-box" style="background: rgba(16, 185, 129, 0.06); border-color: rgba(16, 185, 129, 0.25);">
+                            <h3 style="color: #10b981;">💡 飞牛音乐歌单功能提示</h3>
+                            <ul style="font-size: 11px; color: var(--text-muted); padding-left: 16px; line-height: 1.8; margin-top: 6px;">
+                                <li><strong>外部歌单一键导入</strong>：在「歌单文本提取」解析后直接点击「🐂 导入到飞牛歌单」。</li>
+                                <li><strong>智能曲库搜索匹配</strong>：系统自动按歌名与歌手在飞牛本地库中精准检索并写入。</li>
+                                <li><strong>一键清理失效歌曲</strong>：删除已失效或物理路径变更的歌曲。</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- 右侧歌单展示与歌曲管理区 -->
+                    <div class="display-panel">
+                        <!-- 统计概览卡片 -->
+                        <div class="stats-grid">
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-total">🐂</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">连接账号</span>
+                                    <span class="stat-value" id="stat-fn-user">-</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-count">📑</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">飞牛歌单总数</span>
+                                    <span class="stat-value" id="stat-fn-playlist-count">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-ok">🎵</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">歌单累计曲目</span>
+                                    <span class="stat-value" id="stat-fn-track-count">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel highlight-accent">
+                                <div class="stat-icon icon-dup">✨</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">会话保活状态</span>
+                                    <span class="stat-value" id="stat-fn-session-status">就绪</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 歌单卡片网格面板 -->
+                        <div class="table-panel glass-panel" id="fn-playlist-panel">
+                            <div class="table-header">
+                                <div>
+                                    <h3>飞牛歌单列表</h3>
+                                    <span class="table-subtitle">点击任意歌单卡片查看其收录歌曲明细</span>
+                                </div>
+                                <div class="table-actions">
+                                    <input type="text" id="fn-filter-query" class="input-search" placeholder="筛选歌单名称...">
+                                    <button id="btn-fn-refresh-playlists" class="btn btn-secondary btn-sm" title="重新从飞牛 NAS 拉取歌单">
+                                        🔄 刷新歌单
+                                    </button>
+                                </div>
+                            </div>
+
+                            <!-- 歌单卡片网格容器 -->
+                            <div id="fn-playlist-grid" class="playlist-cards-grid">
+                                <div class="empty-state" style="grid-column: 1 / -1;">
+                                    <p>未连接飞牛 NAS 或暂无歌单，请先在左侧输入凭据连接</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 选中歌单曲目明细抽屉面板 -->
+                        <div class="table-panel glass-panel hidden" id="fn-track-detail-panel">
+                            <div class="table-header">
+                                <div>
+                                    <h3 id="fn-detail-playlist-name">歌单曲目明细</h3>
+                                    <span class="table-subtitle" id="fn-detail-playlist-sub">共 0 首歌曲</span>
+                                </div>
+                                <div class="table-actions">
+                                    <button id="btn-fn-close-tracks" class="btn btn-secondary btn-sm">⬅️ 返回歌单列表</button>
+                                    <button id="btn-fn-purge-invalid" class="btn btn-secondary btn-sm" title="清理失效或找不到物理文件的歌曲">
+                                        🧹 清理失效歌曲
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="table-container" style="max-height: 480px; overflow-y: auto;">
+                                <table class="data-table" id="table-fn-tracks">
+                                    <thead>
+                                        <tr>
+                                            <th width="60">序号</th>
+                                            <th>歌曲名称</th>
+                                            <th>歌手</th>
+                                            <th>专辑</th>
+                                            <th>格式/规格</th>
+                                            <th>时长</th>
+                                            <th width="120">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="fn-tracks-body">
+                                        <tr>
+                                            <td colspan="7" class="empty-state">
+                                                <p>正在加载歌曲列表...</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
         </main>
 
         <!-- 全局音频试听条 -->
@@ -769,9 +953,113 @@
         </div>
     </div>
 
+    <!-- 飞牛歌单一键导入模态框 (Modal) -->
+    <div id="fn-import-modal" class="modal-overlay hidden">
+        <div class="modal-card glass-panel" style="max-width: 640px;">
+            <div class="modal-header">
+                <h3 id="fn-import-modal-title">🐂 导入歌单到飞牛 NAS</h3>
+                <button id="btn-fn-import-modal-close" class="btn-icon" title="关闭">✕</button>
+            </div>
+            <div class="modal-body">
+                <div id="fn-import-form-area">
+                    <p class="modal-desc" id="fn-import-modal-desc">即将匹配并导入 0 首歌曲至飞牛本地音乐库</p>
+
+                    <div class="form-group">
+                        <label>导入模式</label>
+                        <div class="form-row">
+                            <label class="radio-label">
+                                <input type="radio" name="fn-import-mode" value="new" checked>
+                                <span>新建飞牛歌单</span>
+                            </label>
+                            <label class="radio-label">
+                                <input type="radio" name="fn-import-mode" value="existing">
+                                <span>追加至现有歌单</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="form-group" id="fn-import-group-new-name">
+                        <label for="fn-import-new-name">新歌单名称</label>
+                        <input type="text" id="fn-import-new-name" class="input-text" placeholder="输入歌单名称">
+                    </div>
+
+                    <div class="form-group hidden" id="fn-import-group-existing-pl">
+                        <label for="fn-import-select-pl">选择现有飞牛歌单</label>
+                        <select id="fn-import-select-pl" class="select-input">
+                            <option value="">加载中...</option>
+                        </select>
+                    </div>
+                </div>
+
+                <!-- 导入执行中的进度条 -->
+                <div id="fn-import-running-area" class="hidden" style="margin: 15px 0;">
+                    <div class="progress-header">
+                        <span class="progress-title" id="fn-import-progress-status">🔍 正在检索飞牛本地曲库并匹配歌曲...</span>
+                        <span class="progress-percent" id="fn-import-progress-pct">匹配中...</span>
+                    </div>
+                    <div class="progress-bar-bg" style="margin-top: 8px;">
+                        <div class="progress-bar-fill" style="width: 100%; animation: pulse-glow 1.5s infinite; background: linear-gradient(90deg, #10b981, #059669);"></div>
+                    </div>
+                </div>
+
+                <!-- 导入完成结果报告区 -->
+                <div id="fn-import-result-area" class="hidden" style="margin-top: 15px;">
+                    <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 12px;">
+                        <div class="stat-card glass-panel" style="padding: 10px;">
+                            <span class="stat-label">提取总数</span>
+                            <span class="stat-value" id="fn-rep-total" style="font-size: 18px;">0</span>
+                        </div>
+                        <div class="stat-card glass-panel" style="padding: 10px;">
+                            <span class="stat-label" style="color: #10b981;">匹配入库</span>
+                            <span class="stat-value" id="fn-rep-matched" style="font-size: 18px; color: #10b981;">0</span>
+                        </div>
+                        <div class="stat-card glass-panel" style="padding: 10px;">
+                            <span class="stat-label" style="color: var(--color-danger);">未找到</span>
+                            <span class="stat-value" id="fn-rep-unmatched" style="font-size: 18px; color: var(--color-danger);">0</span>
+                        </div>
+                    </div>
+
+                    <div id="fn-unmatched-box" class="hidden">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                            <span style="font-size: 12px; font-weight: 600; color: var(--color-danger);">⚠️ 以下歌曲在 NAS 本地曲库中暂未收录：</span>
+                            <button id="btn-copy-unmatched" class="btn btn-secondary btn-sm" style="font-size: 11px; padding: 2px 8px;">📋 复制缺失清单</button>
+                        </div>
+                        <textarea id="fn-unmatched-textarea" class="input-text" rows="4" readonly style="font-size: 11px; font-family: var(--font-mono);"></textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-fn-import-cancel" class="btn btn-secondary btn-sm">取消</button>
+                <button id="btn-fn-import-confirm" class="btn btn-primary btn-sm" style="background: linear-gradient(135deg, #10b981, #059669);">🚀 开始匹配并导入</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- 歌单重命名模态框 (Modal) -->
+    <div id="fn-rename-modal" class="modal-overlay hidden">
+        <div class="modal-card glass-panel">
+            <div class="modal-header">
+                <h3>编辑飞牛歌单</h3>
+                <button id="btn-fn-rename-close" class="btn-icon" title="关闭">✕</button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="fn-rename-guid">
+                <div class="form-group">
+                    <label for="fn-rename-name">新歌单名称</label>
+                    <input type="text" id="fn-rename-name" class="input-text" placeholder="输入歌单名称" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button id="btn-fn-rename-cancel" class="btn btn-secondary btn-sm">取消</button>
+                <button id="btn-fn-rename-confirm" class="btn btn-primary btn-sm">保存</button>
+            </div>
+        </div>
+    </div>
+
     <!-- 弹窗与 Toast 容器 -->
     <div id="toast-container" class="toast-container"></div>
 
     <script src="/static/app.js"></script>
 </body>
 </html>
+

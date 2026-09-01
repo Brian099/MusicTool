@@ -27,6 +27,19 @@ const API = {
     playlistHistoryDelete: '/api/playlist/history-delete',
     playlistHistoryClear: '/api/playlist/history-clear',
     playlistExport: '/api/playlist/export',
+    feiniuConnect: '/api/feiniu/connect',
+    feiniuStatus: '/api/feiniu/status',
+    feiniuDisconnect: '/api/feiniu/disconnect',
+    feiniuPlaylists: '/api/feiniu/playlists',
+    feiniuPlaylistTracks: '/api/feiniu/playlist/tracks',
+    feiniuPlaylistCreate: '/api/feiniu/playlist/create',
+    feiniuPlaylistEdit: '/api/feiniu/playlist/edit',
+    feiniuPlaylistDelete: '/api/feiniu/playlist/delete',
+    feiniuPlaylistAddTracks: '/api/feiniu/playlist/add-tracks',
+    feiniuPlaylistRemoveTracks: '/api/feiniu/playlist/remove-tracks',
+    feiniuPlaylistPurge: '/api/feiniu/playlist/purge',
+    feiniuPlaylistImport: '/api/feiniu/playlist/import',
+    feiniuCover: '/api/feiniu/cover',
     audioStream: '/api/audio/stream'
 };
 
@@ -38,6 +51,9 @@ const state = {
     playlistSongs: [],
     playlistRawResult: null,
     playlistHistory: [],
+    feiniuStatus: null,
+    feiniuPlaylists: [],
+    currentFeiNiuPlaylist: null,
     formatPollingTimer: null,
     dedupPollingTimer: null,
     losslessPollingTimer: null,
@@ -294,6 +310,9 @@ function initNavTabs() {
                 loadLosslessRecords();
             } else if (targetId === 'tab-playlist') {
                 loadPlaylistHistory();
+            } else if (targetId === 'tab-feiniu') {
+                checkFeiNiuStatus();
+                loadFeiNiuPlaylists();
             }
         });
     });
@@ -1617,6 +1636,612 @@ window.deleteHistoryItem = async function(id) {
     }
 };
 
+// ==================== TAB 5: 飞牛音乐歌单管理器 ====================
+
+async function checkFeiNiuStatus() {
+    try {
+        const res = await fetch(API.feiniuStatus);
+        if (!res.ok) return;
+        const data = await res.json();
+        state.feiniuStatus = data;
+
+        const chip = document.getElementById('chip-feiniu');
+        const chipLabel = document.getElementById('feiniu-chip-label');
+        const authBadge = document.getElementById('fn-auth-status-badge');
+        const statUser = document.getElementById('stat-fn-user');
+        const statSession = document.getElementById('stat-fn-session-status');
+
+        if (data.connected) {
+            if (chip) chip.className = 'chip chip-active';
+            if (chipLabel) chipLabel.textContent = `飞牛: ${data.username || '已连接'}`;
+            if (authBadge) {
+                authBadge.className = 'status-indicator-badge connected';
+                authBadge.textContent = '🟢 已连接';
+            }
+            if (statUser) statUser.textContent = data.username || '已登录';
+            if (statSession) {
+                statSession.textContent = '已保活';
+                statSession.style.color = '#10b981';
+            }
+
+            // 自动填充已保存的地址和用户名
+            const serverInput = document.getElementById('fn-server-url');
+            const userInput = document.getElementById('fn-username');
+            if (serverInput && !serverInput.value && data.server_url) serverInput.value = data.server_url;
+            if (userInput && !userInput.value && data.username) userInput.value = data.username;
+        } else {
+            if (chip) chip.className = 'chip';
+            if (chipLabel) chipLabel.textContent = '飞牛NAS';
+            if (authBadge) {
+                authBadge.className = 'status-indicator-badge';
+                authBadge.textContent = data.error ? '🔴 连接失败' : '未连接';
+            }
+            if (statUser) statUser.textContent = data.username ? `${data.username} (离线)` : '-';
+            if (statSession) {
+                statSession.textContent = '未连接';
+                statSession.style.color = 'var(--text-muted)';
+            }
+        }
+    } catch (e) {
+        console.error('检查飞牛状态失败:', e);
+    }
+}
+
+function initFeiNiuManager() {
+    const connectForm = document.getElementById('form-feiniu-connect');
+    const disconnectBtn = document.getElementById('btn-fn-disconnect');
+    const createPlForm = document.getElementById('form-fn-create-playlist');
+    const refreshPlBtn = document.getElementById('btn-fn-refresh-playlists');
+    const filterInput = document.getElementById('fn-filter-query');
+    const closeTracksBtn = document.getElementById('btn-fn-close-tracks');
+    const purgeInvalidBtn = document.getElementById('btn-fn-purge-invalid');
+
+    // 连接表单提交
+    if (connectForm) {
+        connectForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('btn-fn-connect');
+            btn.disabled = true;
+            btn.textContent = '⏳ 正在连接...';
+
+            const payload = {
+                server_url: document.getElementById('fn-server-url').value.trim(),
+                username: document.getElementById('fn-username').value.trim(),
+                password: document.getElementById('fn-password').value,
+                access_code: document.getElementById('fn-access-code').value.trim()
+            };
+
+            try {
+                const res = await fetch(API.feiniuConnect, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showToast(`飞牛 NAS 连接成功！欢迎 ${result.username}`, 'success');
+                    await checkFeiNiuStatus();
+                    loadFeiNiuPlaylists();
+                } else {
+                    showToast(`连接失败: ${result.error || '未知错误'}`, 'error');
+                    checkFeiNiuStatus();
+                }
+            } catch (err) {
+                showToast(`请求异常: ${err.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '⚡ 连接 / 重新登录';
+            }
+        });
+    }
+
+    // 断开连接
+    if (disconnectBtn) {
+        disconnectBtn.addEventListener('click', async () => {
+            if (!confirm('确认断开飞牛 NAS 连接并清除本地存储的密码与 Token 凭据？')) return;
+            try {
+                await fetch(API.feiniuDisconnect, { method: 'POST' });
+                showToast('已断开飞牛 NAS 连接', 'info');
+                state.feiniuPlaylists = [];
+                renderFeiNiuPlaylists([]);
+                checkFeiNiuStatus();
+            } catch (err) {
+                showToast('断开失败: ' + err.message, 'error');
+            }
+        });
+    }
+
+    // 快捷新建歌单
+    if (createPlForm) {
+        createPlForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const input = document.getElementById('fn-new-pl-name');
+            const name = input.value.trim();
+            if (!name) return;
+
+            try {
+                const res = await fetch(API.feiniuPlaylistCreate, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showToast(`已成功创建飞牛歌单「${name}」`, 'success');
+                    input.value = '';
+                    loadFeiNiuPlaylists();
+                } else {
+                    showToast(`创建歌单失败: ${result.error}`, 'error');
+                }
+            } catch (err) {
+                showToast(`创建异常: ${err.message}`, 'error');
+            }
+        });
+    }
+
+    // 刷新歌单列表
+    if (refreshPlBtn) {
+        refreshPlBtn.addEventListener('click', () => {
+            loadFeiNiuPlaylists();
+        });
+    }
+
+    // 筛选歌单
+    if (filterInput) {
+        filterInput.addEventListener('input', () => {
+            const q = filterInput.value.trim().toLowerCase();
+            if (!q) {
+                renderFeiNiuPlaylists(state.feiniuPlaylists);
+                return;
+            }
+            const filtered = state.feiniuPlaylists.filter(p => (p.name || '').toLowerCase().includes(q));
+            renderFeiNiuPlaylists(filtered);
+        });
+    }
+
+    // 关闭歌曲明细回到歌单列表
+    if (closeTracksBtn) {
+        closeTracksBtn.addEventListener('click', () => {
+            document.getElementById('fn-track-detail-panel').classList.add('hidden');
+            document.getElementById('fn-playlist-panel').classList.remove('hidden');
+        });
+    }
+
+    // 清理失效歌曲
+    if (purgeInvalidBtn) {
+        purgeInvalidBtn.addEventListener('click', async () => {
+            if (!state.currentFeiNiuPlaylist) return;
+            if (!confirm(`确认清理歌单「${state.currentFeiNiuPlaylist.name}」中的失效歌曲？`)) return;
+
+            try {
+                const res = await fetch(API.feiniuPlaylistPurge, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ guid: state.currentFeiNiuPlaylist.guid })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showToast('清理失效歌曲完成', 'success');
+                    window.viewFeiNiuPlaylist(state.currentFeiNiuPlaylist.guid, state.currentFeiNiuPlaylist.name);
+                    loadFeiNiuPlaylists();
+                } else {
+                    showToast('清理失败: ' + result.error, 'error');
+                }
+            } catch (err) {
+                showToast('清理请求失败: ' + err.message, 'error');
+            }
+        });
+    }
+
+    // 初始化重命名模态框事件
+    initFeiNiuRenameModal();
+}
+
+async function loadFeiNiuPlaylists() {
+    const grid = document.getElementById('fn-playlist-grid');
+    if (!grid) return;
+
+    try {
+        const res = await fetch(`${API.feiniuPlaylists}?page=1&size=100`);
+        const result = await res.json();
+        if (!result.success) {
+            grid.innerHTML = `
+                <div class="empty-state" style="grid-column: 1 / -1;">
+                    <p style="color: var(--color-danger);">拉取歌单失败: ${escapeHtml(result.error || '未连接飞牛 NAS')}</p>
+                </div>
+            `;
+            return;
+        }
+
+        const data = result.data || {};
+        state.feiniuPlaylists = data.list || [];
+
+        // 更新统计卡片
+        const countEl = document.getElementById('stat-fn-playlist-count');
+        const trackCountEl = document.getElementById('stat-fn-track-count');
+        if (countEl) countEl.textContent = state.feiniuPlaylists.length;
+        if (trackCountEl) {
+            const totalTracks = state.feiniuPlaylists.reduce((sum, p) => sum + (p.trackCount || 0), 0);
+            trackCountEl.textContent = totalTracks;
+        }
+
+        renderFeiNiuPlaylists(state.feiniuPlaylists);
+    } catch (e) {
+        grid.innerHTML = `
+            <div class="empty-state" style="grid-column: 1 / -1;">
+                <p>无法连接飞牛服务: ${escapeHtml(e.message)}</p>
+            </div>
+        `;
+    }
+}
+
+function renderFeiNiuPlaylists(playlists) {
+    const grid = document.getElementById('fn-playlist-grid');
+    if (!grid) return;
+
+    if (!playlists || playlists.length === 0) {
+        grid.innerHTML = `
+            <div class="empty-state" style="grid-column: 1 / -1;">
+                <p>暂无歌单，您可以在左侧创建新歌单或从外部歌单提取后一键导入</p>
+            </div>
+        `;
+        return;
+    }
+
+    grid.innerHTML = playlists.map(p => {
+        const safeName = escapeHtml(p.name || '未命名歌单');
+        const trackCount = p.trackCount || 0;
+        const timeStr = p.updatedAt ? new Date(p.updatedAt * 1000).toLocaleDateString() : '';
+
+        // 封面图构建
+        let coverHtml = `<div class="playlist-cover-placeholder">🎵</div>`;
+        if (p.coverId) {
+            const coverUrl = `${API.feiniuCover}?coverId=${encodeURIComponent(p.coverId)}&size=300`;
+            coverHtml = `<img src="${coverUrl}" class="playlist-cover-img" alt="${safeName}" onerror="this.parentElement.innerHTML='<div class=\\'playlist-cover-placeholder\\'>🎵</div>'">`;
+        }
+
+        return `
+            <div class="playlist-card" onclick="viewFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}')">
+                <div class="playlist-cover-box">
+                    ${coverHtml}
+                    <div class="playlist-track-badge">🎵 ${trackCount} 首</div>
+                </div>
+                <div class="playlist-card-content">
+                    <div class="playlist-card-title" title="${safeName}">${safeName}</div>
+                    <div class="playlist-card-time">${timeStr ? '更新于 ' + timeStr : ''}</div>
+                    <div class="playlist-card-actions" onclick="event.stopPropagation();">
+                        <button class="btn-card-action" onclick="viewFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}')" title="查看歌曲">📂</button>
+                        <button class="btn-card-action" onclick="editFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}')" title="重命名">✏️</button>
+                        <button class="btn-card-action" style="color: var(--color-danger);" onclick="deleteFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}')" title="删除歌单">🗑️</button>
+                    </div>
+                </div>
+            </div>
+        `;
+    }).join('');
+}
+
+window.viewFeiNiuPlaylist = async function(guid, name) {
+    state.currentFeiNiuPlaylist = { guid, name };
+
+    const playlistPanel = document.getElementById('fn-playlist-panel');
+    const trackPanel = document.getElementById('fn-track-detail-panel');
+    const nameEl = document.getElementById('fn-detail-playlist-name');
+    const subEl = document.getElementById('fn-detail-playlist-sub');
+    const tbody = document.getElementById('fn-tracks-body');
+
+    playlistPanel.classList.add('hidden');
+    trackPanel.classList.remove('hidden');
+
+    nameEl.textContent = name || '歌单曲目明细';
+    subEl.textContent = '正在加载歌曲...';
+    tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>正在加载歌曲列表...</p></td></tr>`;
+
+    try {
+        const res = await fetch(`${API.feiniuPlaylistTracks}?guid=${encodeURIComponent(guid)}&page=1&size=300`);
+        const result = await res.json();
+        if (!result.success) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><p style="color: var(--color-danger);">${escapeHtml(result.error)}</p></td></tr>`;
+            return;
+        }
+
+        const tracks = (result.data && result.data.list) || [];
+        subEl.textContent = `共 ${tracks.length} 首歌曲`;
+
+        if (tracks.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>此歌单内暂无歌曲</p></td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = tracks.map((t, idx) => {
+            const safeTitle = escapeHtml(t.title || '未知歌曲');
+            const artists = (t.artists || []).map(a => a.name).join(' / ') || '未知歌手';
+            const album = escapeHtml(t.album || '-');
+            const format = (t.audioSpec && t.audioSpec.format ? t.audioSpec.format.toUpperCase() : 'AUDIO');
+            const bitrate = (t.audioSpec && t.audioSpec.bitrate) ? `${Math.round(t.audioSpec.bitrate / 1000)}k` : '';
+            const duration = formatDuration(t.duration);
+
+            return `
+                <tr>
+                    <td><span style="font-family: var(--font-mono);">${idx + 1}</span></td>
+                    <td>
+                        <div class="song-meta">
+                            <strong style="color: var(--text-main); font-size: 13px;">${safeTitle}</strong>
+                            <span class="song-path" style="max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(t.audioSpec ? t.audioSpec.path : '')}</span>
+                        </div>
+                    </td>
+                    <td><span>${escapeHtml(artists)}</span></td>
+                    <td><span style="color: var(--text-muted);">${album}</span></td>
+                    <td><span class="badge-format">${format} ${bitrate}</span></td>
+                    <td><span style="font-family: var(--font-mono);">${duration}</span></td>
+                    <td class="action-cell">
+                        <div class="action-btn-group">
+                            <button class="btn btn-danger-outline btn-sm" onclick="removeFeiNiuTrack('${escapeHtml(guid)}', '${escapeHtml(t.guid)}')" title="从歌单中移除此曲目">
+                                移除
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>加载失败: ${escapeHtml(e.message)}</p></td></tr>`;
+    }
+};
+
+window.editFeiNiuPlaylist = function(guid, name) {
+    const modal = document.getElementById('fn-rename-modal');
+    document.getElementById('fn-rename-guid').value = guid;
+    document.getElementById('fn-rename-name').value = name;
+    modal.classList.remove('hidden');
+};
+
+function initFeiNiuRenameModal() {
+    const modal = document.getElementById('fn-rename-modal');
+    const closeBtn = document.getElementById('btn-fn-rename-close');
+    const cancelBtn = document.getElementById('btn-fn-rename-cancel');
+    const confirmBtn = document.getElementById('btn-fn-rename-confirm');
+
+    const closeModal = () => modal.classList.add('hidden');
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', async () => {
+            const guid = document.getElementById('fn-rename-guid').value;
+            const name = document.getElementById('fn-rename-name').value.trim();
+            if (!name) return;
+
+            try {
+                const res = await fetch(API.feiniuPlaylistEdit, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ guid, name })
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showToast('歌单已成功重命名', 'success');
+                    closeModal();
+                    loadFeiNiuPlaylists();
+                } else {
+                    showToast('修改失败: ' + result.error, 'error');
+                }
+            } catch (err) {
+                showToast('请求失败: ' + err.message, 'error');
+            }
+        });
+    }
+}
+
+window.deleteFeiNiuPlaylist = async function(guid, name) {
+    if (!confirm(`确定要从飞牛 NAS 中删除歌单「${name}」吗？（不会删除音乐源文件）`)) return;
+
+    try {
+        const res = await fetch(API.feiniuPlaylistDelete, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ guid })
+        });
+        const result = await res.json();
+        if (result.success) {
+            showToast(`已删除歌单「${name}」`, 'info');
+            loadFeiNiuPlaylists();
+        } else {
+            showToast('删除失败: ' + result.error, 'error');
+        }
+    } catch (e) {
+        showToast('删除请求失败: ' + e.message, 'error');
+    }
+};
+
+window.removeFeiNiuTrack = async function(playlistGuid, trackGuid) {
+    try {
+        const res = await fetch(API.feiniuPlaylistRemoveTracks, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                guid: playlistGuid,
+                trackGUIDs: [trackGuid]
+            })
+        });
+        const result = await res.json();
+        if (result.success) {
+            showToast('已从歌单移除歌曲', 'info');
+            window.viewFeiNiuPlaylist(playlistGuid, state.currentFeiNiuPlaylist ? state.currentFeiNiuPlaylist.name : '');
+            loadFeiNiuPlaylists();
+        } else {
+            showToast('移除失败: ' + result.error, 'error');
+        }
+    } catch (e) {
+        showToast('请求失败: ' + e.message, 'error');
+    }
+};
+
+// ==================== 飞牛歌单一键导入模态框 ====================
+
+function initFeiNiuImportModal() {
+    const importBtn = document.getElementById('btn-pl-import-feiniu');
+    const modal = document.getElementById('fn-import-modal');
+    const closeBtn = document.getElementById('btn-fn-import-modal-close');
+    const cancelBtn = document.getElementById('btn-fn-import-cancel');
+    const confirmBtn = document.getElementById('btn-fn-import-confirm');
+    const copyUnmatchedBtn = document.getElementById('btn-copy-unmatched');
+
+    const formArea = document.getElementById('fn-import-form-area');
+    const runningArea = document.getElementById('fn-import-running-area');
+    const resultArea = document.getElementById('fn-import-result-area');
+
+    const groupNewName = document.getElementById('fn-import-group-new-name');
+    const groupExistingPl = document.getElementById('fn-import-group-existing-pl');
+    const selectPl = document.getElementById('fn-import-select-pl');
+
+    const closeModal = () => modal.classList.add('hidden');
+    if (closeBtn) closeBtn.addEventListener('click', closeModal);
+    if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    // 单选框切换新建/现有歌单模式
+    document.querySelectorAll('input[name="fn-import-mode"]').forEach(radio => {
+        radio.addEventListener('change', (e) => {
+            if (e.target.value === 'new') {
+                groupNewName.classList.remove('hidden');
+                groupExistingPl.classList.add('hidden');
+            } else {
+                groupNewName.classList.add('hidden');
+                groupExistingPl.classList.remove('hidden');
+            }
+        });
+    });
+
+    if (importBtn) {
+        importBtn.addEventListener('click', async () => {
+            if (!state.playlistSongs || state.playlistSongs.length === 0) {
+                showToast('请先在上方提取歌单歌曲列表或载入历史记录', 'warning');
+                return;
+            }
+
+            // 打开模态框并重置状态
+            modal.classList.remove('hidden');
+            formArea.classList.remove('hidden');
+            runningArea.classList.add('hidden');
+            resultArea.classList.add('hidden');
+            confirmBtn.disabled = false;
+            confirmBtn.textContent = '🚀 开始匹配并导入';
+
+            document.getElementById('fn-import-modal-desc').textContent = 
+                `即将匹配并导入「${state.playlistRawResult ? state.playlistRawResult.title : '提取歌单'}」共 ${state.playlistSongs.length} 首歌曲至飞牛曲库`;
+            
+            document.getElementById('fn-import-new-name').value = 
+                (state.playlistRawResult && state.playlistRawResult.title) ? state.playlistRawResult.title : '外部导入歌单';
+
+            // 载入已有飞牛歌单到下拉列表
+            selectPl.innerHTML = '<option value="">-- 请选择现有歌单 --</option>';
+            if (state.feiniuPlaylists && state.feiniuPlaylists.length > 0) {
+                state.feiniuPlaylists.forEach(p => {
+                    selectPl.innerHTML += `<option value="${escapeHtml(p.guid)}">${escapeHtml(p.name)} (${p.trackCount} 首)</option>`;
+                });
+            } else {
+                try {
+                    const res = await fetch(`${API.feiniuPlaylists}?page=1&size=100`);
+                    const data = await res.json();
+                    if (data.success && data.data && data.data.list) {
+                        state.feiniuPlaylists = data.data.list;
+                        state.feiniuPlaylists.forEach(p => {
+                            selectPl.innerHTML += `<option value="${escapeHtml(p.guid)}">${escapeHtml(p.name)} (${p.trackCount} 首)</option>`;
+                        });
+                    }
+                } catch (e) {}
+            }
+        });
+    }
+
+    if (confirmBtn) {
+        confirmBtn.addEventListener('click', async () => {
+            const mode = document.querySelector('input[name="fn-import-mode"]:checked').value;
+            let targetName = '';
+            let targetGuid = '';
+
+            if (mode === 'new') {
+                targetName = document.getElementById('fn-import-new-name').value.trim();
+                if (!targetName) {
+                    showToast('请输入歌单名称', 'warning');
+                    return;
+                }
+            } else {
+                targetGuid = selectPl.value;
+                if (!targetGuid) {
+                    showToast('请选择目标飞牛歌单', 'warning');
+                    return;
+                }
+            }
+
+            // 切换到运行中状态
+            formArea.classList.add('hidden');
+            runningArea.classList.remove('hidden');
+            confirmBtn.disabled = true;
+            confirmBtn.textContent = '⏳ 正在检索匹配并写入...';
+
+            const payload = {
+                name: targetName,
+                playlist_guid: targetGuid,
+                songs: state.playlistSongs
+            };
+
+            try {
+                const res = await fetch(API.feiniuPlaylistImport, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+
+                runningArea.classList.add('hidden');
+                resultArea.classList.remove('hidden');
+
+                if (result.success && result.data) {
+                    const rep = result.data;
+                    document.getElementById('fn-rep-total').textContent = rep.total;
+                    document.getElementById('fn-rep-matched').textContent = rep.matched_count;
+                    document.getElementById('fn-rep-unmatched').textContent = rep.unmatched_count;
+
+                    showToast(`歌单「${rep.playlist_name}」导入完成！已成功匹配入库 ${rep.matched_count} 首`, 'success');
+
+                    // 未匹配歌曲清单
+                    const unmatchedBox = document.getElementById('fn-unmatched-box');
+                    const unmatchedTextarea = document.getElementById('fn-unmatched-textarea');
+                    if (rep.unmatched_songs && rep.unmatched_songs.length > 0) {
+                        unmatchedBox.classList.remove('hidden');
+                        const unmatchedLines = rep.unmatched_songs.map((s, i) => `${i + 1}. ${s.song_name} - ${s.artist}`).join('\n');
+                        unmatchedTextarea.value = unmatchedLines;
+                    } else {
+                        unmatchedBox.classList.add('hidden');
+                    }
+
+                    confirmBtn.textContent = '✅ 导入完成';
+                    loadFeiNiuPlaylists();
+                } else {
+                    showToast('导入失败: ' + (result.error || '未知错误'), 'error');
+                    confirmBtn.disabled = false;
+                    confirmBtn.textContent = '重新尝试';
+                }
+            } catch (err) {
+                runningArea.classList.add('hidden');
+                showToast('导入请求异常: ' + err.message, 'error');
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = '重新尝试';
+            }
+        });
+    }
+
+    if (copyUnmatchedBtn) {
+        copyUnmatchedBtn.addEventListener('click', () => {
+            const textarea = document.getElementById('fn-unmatched-textarea');
+            if (!textarea || !textarea.value) return;
+            navigator.clipboard.writeText(textarea.value).then(() => {
+                showToast('已复制未命中歌曲清单到剪贴板', 'success');
+            });
+        });
+    }
+}
+
 // 页面加载启动
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
@@ -1628,6 +2253,10 @@ document.addEventListener('DOMContentLoaded', () => {
     initDeduplicator();
     initLosslessChecker();
     initPlaylistExtractor();
+    initFeiNiuManager();
+    initFeiNiuImportModal();
+    checkFeiNiuStatus();
     loadFormatRecords();
 });
+
 

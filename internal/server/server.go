@@ -21,6 +21,7 @@ import (
 	"music-toolkit/internal/database"
 	"music-toolkit/internal/deduplicator"
 	"music-toolkit/internal/detector"
+	"music-toolkit/internal/feiniu"
 	"music-toolkit/internal/fileop"
 	"music-toolkit/internal/lossless"
 	"music-toolkit/internal/playlist"
@@ -45,13 +46,15 @@ type TaskProgress struct {
 
 // Server Web 服务器
 type Server struct {
-	cfg        *config.Config
-	db         *database.DB
-	detector   *detector.Detector
-	dedup      *deduplicator.Deduplicator
-	fileOp     *fileop.FileOperator
-	playlist   *playlist.Extractor
-	frontendFS http.FileSystem
+	cfg          *config.Config
+	db           *database.DB
+	detector     *detector.Detector
+	dedup        *deduplicator.Deduplicator
+	fileOp       *fileop.FileOperator
+	playlist     *playlist.Extractor
+	feiniuClient *feiniu.Client
+	fnImporter   *feiniu.Importer
+	frontendFS   http.FileSystem
 
 	mu            sync.Mutex
 	formatProg    TaskProgress
@@ -65,6 +68,8 @@ func NewServer(cfg *config.Config, db *database.DB, frontendFS http.FileSystem) 
 	dedup := deduplicator.NewDeduplicator(db, det, cfg.FFmpegPath)
 	fileOp := fileop.NewFileOperator(cfg.MusicDir, cfg.OutputDir)
 	pl := playlist.NewExtractor()
+	fnClient := feiniu.NewClient(db)
+	fnImporter := feiniu.NewImporter(fnClient)
 
 	s := &Server{
 		cfg:          cfg,
@@ -73,6 +78,8 @@ func NewServer(cfg *config.Config, db *database.DB, frontendFS http.FileSystem) 
 		dedup:        dedup,
 		fileOp:       fileOp,
 		playlist:     pl,
+		feiniuClient: fnClient,
+		fnImporter:   fnImporter,
 		frontendFS:   frontendFS,
 		formatProg:   TaskProgress{Status: "idle"},
 		dedupProg:    TaskProgress{Status: "idle"},
@@ -115,6 +122,21 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/playlist/history-delete", s.handlePlaylistHistoryDelete)
 	mux.HandleFunc("POST /api/playlist/history-clear", s.handlePlaylistHistoryClear)
 	mux.HandleFunc("POST /api/playlist/export", s.handlePlaylistExport)
+
+	// 飞牛音乐歌单与连接路由
+	mux.HandleFunc("POST /api/feiniu/connect", s.handleFeiNiuConnect)
+	mux.HandleFunc("GET /api/feiniu/status", s.handleFeiNiuStatus)
+	mux.HandleFunc("POST /api/feiniu/disconnect", s.handleFeiNiuDisconnect)
+	mux.HandleFunc("GET /api/feiniu/playlists", s.handleFeiNiuPlaylists)
+	mux.HandleFunc("GET /api/feiniu/playlist/tracks", s.handleFeiNiuPlaylistTracks)
+	mux.HandleFunc("POST /api/feiniu/playlist/create", s.handleFeiNiuPlaylistCreate)
+	mux.HandleFunc("POST /api/feiniu/playlist/edit", s.handleFeiNiuPlaylistEdit)
+	mux.HandleFunc("POST /api/feiniu/playlist/delete", s.handleFeiNiuPlaylistDelete)
+	mux.HandleFunc("POST /api/feiniu/playlist/add-tracks", s.handleFeiNiuPlaylistAddTracks)
+	mux.HandleFunc("POST /api/feiniu/playlist/remove-tracks", s.handleFeiNiuPlaylistRemoveTracks)
+	mux.HandleFunc("POST /api/feiniu/playlist/purge", s.handleFeiNiuPlaylistPurge)
+	mux.HandleFunc("POST /api/feiniu/playlist/import", s.handleFeiNiuPlaylistImport)
+	mux.HandleFunc("GET /api/feiniu/cover", s.handleFeiNiuCover)
 
 	mux.HandleFunc("GET /api/audio/stream", s.handleAudioStream)
 
@@ -1387,4 +1409,247 @@ func (s *Server) handlePlaylistExport(w http.ResponseWriter, r *http.Request) {
 		w.Write([]byte(s + "\n"))
 	}
 }
+
+// ----------------- 飞牛音乐相关接口 -----------------
+
+func (s *Server) handleFeiNiuConnect(w http.ResponseWriter, r *http.Request) {
+	var req feiniu.ConnectRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json request", 400)
+		return
+	}
+
+	loginData, err := s.feiniuClient.SetAuth(r.Context(), req.ServerURL, req.Username, req.Password, req.AccessCode)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":    true,
+		"username":   loginData.Username,
+		"user_token": loginData.UserToken,
+	})
+}
+
+func (s *Server) handleFeiNiuStatus(w http.ResponseWriter, r *http.Request) {
+	status := s.feiniuClient.GetStatus(r.Context())
+	writeJSON(w, http.StatusOK, status)
+}
+
+func (s *Server) handleFeiNiuDisconnect(w http.ResponseWriter, r *http.Request) {
+	if err := s.feiniuClient.Disconnect(r.Context()); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (s *Server) handleFeiNiuPlaylists(w http.ResponseWriter, r *http.Request) {
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+	if page <= 0 {
+		page = 1
+	}
+	if size <= 0 {
+		size = 50
+	}
+
+	playlists, err := s.feiniuClient.GetPlaylists(r.Context(), page, size)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data":    playlists,
+	})
+}
+
+func (s *Server) handleFeiNiuPlaylistTracks(w http.ResponseWriter, r *http.Request) {
+	guid := r.URL.Query().Get("guid")
+	if guid == "" {
+		http.Error(w, "missing guid", 400)
+		return
+	}
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+
+	tracks, err := s.feiniuClient.GetPlaylistTracks(r.Context(), guid, page, size)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data":    tracks,
+	})
+}
+
+func (s *Server) handleFeiNiuPlaylistCreate(w http.ResponseWriter, r *http.Request) {
+	var req feiniu.PlaylistCreateReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	pl, err := s.feiniuClient.CreatePlaylist(r.Context(), req.Name, req.CoverID)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data":    pl,
+	})
+}
+
+func (s *Server) handleFeiNiuPlaylistEdit(w http.ResponseWriter, r *http.Request) {
+	var req feiniu.PlaylistEditReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	if err := s.feiniuClient.EditPlaylist(r.Context(), req.GUID, req.Name, req.CoverID); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (s *Server) handleFeiNiuPlaylistDelete(w http.ResponseWriter, r *http.Request) {
+	var req feiniu.PlaylistDeleteReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	if err := s.feiniuClient.DeletePlaylist(r.Context(), req.GUID); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (s *Server) handleFeiNiuPlaylistAddTracks(w http.ResponseWriter, r *http.Request) {
+	var req feiniu.PlaylistTracksActionReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	if err := s.feiniuClient.AddTracksToPlaylist(r.Context(), req.GUID, req.TrackGUIDs); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (s *Server) handleFeiNiuPlaylistRemoveTracks(w http.ResponseWriter, r *http.Request) {
+	var req feiniu.PlaylistTracksActionReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	if err := s.feiniuClient.RemoveTracksFromPlaylist(r.Context(), req.GUID, req.TrackGUIDs); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (s *Server) handleFeiNiuPlaylistPurge(w http.ResponseWriter, r *http.Request) {
+	var req feiniu.PlaylistDeleteReq
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	if err := s.feiniuClient.PurgeInvalidTracks(r.Context(), req.GUID); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (s *Server) handleFeiNiuPlaylistImport(w http.ResponseWriter, r *http.Request) {
+	var req feiniu.ImportPlaylistRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	result, err := s.fnImporter.ImportPlaylist(r.Context(), req)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+			"data":    result,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+		"data":    result,
+	})
+}
+
+func (s *Server) handleFeiNiuCover(w http.ResponseWriter, r *http.Request) {
+	coverID := r.URL.Query().Get("coverId")
+	if coverID == "" {
+		http.Error(w, "missing coverId", 400)
+		return
+	}
+	size, _ := strconv.Atoi(r.URL.Query().Get("size"))
+
+	reader, contentType, err := s.feiniuClient.GetCoverReader(r.Context(), coverID, size)
+	if err != nil {
+		http.Error(w, err.Error(), 502)
+		return
+	}
+	defer reader.Close()
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Cache-Control", "public, max-age=86400")
+	io.Copy(w, reader)
+}
+
 
