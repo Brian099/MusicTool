@@ -43,6 +43,40 @@ type FeiNiuPlaylist struct {
 	UpdatedAt  int64  `json:"updatedAt"`
 }
 
+func (p *FeiNiuPlaylist) UnmarshalJSON(data []byte) error {
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return err
+	}
+	if v, ok := raw["guid"].(string); ok {
+		p.GUID = v
+	}
+	if v, ok := raw["name"].(string); ok {
+		p.Name = v
+	}
+	if v, ok := raw["coverId"].(string); ok {
+		p.CoverID = v
+	}
+	if v, ok := raw["trackCount"].(float64); ok {
+		p.TrackCount = int(v)
+	} else if v, ok := raw["count"].(float64); ok {
+		p.TrackCount = int(v)
+	} else if v, ok := raw["songCount"].(float64); ok {
+		p.TrackCount = int(v)
+	} else if v, ok := raw["itemCount"].(float64); ok {
+		p.TrackCount = int(v)
+	} else if v, ok := raw["total"].(float64); ok {
+		p.TrackCount = int(v)
+	}
+	if v, ok := raw["createdAt"].(float64); ok {
+		p.CreatedAt = int64(v)
+	}
+	if v, ok := raw["updatedAt"].(float64); ok {
+		p.UpdatedAt = int64(v)
+	}
+	return nil
+}
+
 // FeiNiuAlbum 飞牛专辑模型（支持嵌套对象或字符串解析）
 type FeiNiuAlbum struct {
 	GUID       string `json:"guid,omitempty"`

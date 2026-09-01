@@ -1885,6 +1885,24 @@ async function loadFeiNiuPlaylists() {
         }
 
         renderFeiNiuPlaylists(state.feiniuPlaylists);
+
+        // 异步精准校准每个歌单的实际歌曲总数（防止飞牛初始返回 trackCount=0）
+        Promise.all(state.feiniuPlaylists.map(async (p) => {
+            try {
+                const tr = await fetch(`${API.feiniuPlaylistTracks}?guid=${encodeURIComponent(p.guid)}&page=1&size=1`);
+                const td = await tr.json();
+                if (td.success && td.data && typeof td.data.total === 'number') {
+                    p.trackCount = td.data.total;
+                    const badge = document.getElementById(`fn-badge-${p.guid}`);
+                    if (badge) badge.textContent = `🎵 ${p.trackCount} 首`;
+                }
+            } catch (e) {}
+        })).then(() => {
+            if (trackCountEl) {
+                const totalTracks = state.feiniuPlaylists.reduce((sum, p) => sum + (p.trackCount || 0), 0);
+                trackCountEl.textContent = totalTracks;
+            }
+        });
     } catch (e) {
         grid.innerHTML = `
             <div class="empty-state" style="grid-column: 1 / -1;">
@@ -1923,7 +1941,7 @@ function renderFeiNiuPlaylists(playlists) {
             <div class="playlist-card" onclick="viewFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}')">
                 <div class="playlist-cover-box">
                     ${coverHtml}
-                    <div class="playlist-track-badge">🎵 ${trackCount} 首</div>
+                    <div class="playlist-track-badge" id="fn-badge-${escapeHtml(p.guid)}">🎵 ${trackCount} 首</div>
                 </div>
                 <div class="playlist-card-content">
                     <div class="playlist-card-title" title="${safeName}">${safeName}</div>
@@ -1964,7 +1982,19 @@ window.viewFeiNiuPlaylist = async function(guid, name) {
         }
 
         const tracks = (result.data && result.data.list) || [];
-        subEl.textContent = `共 ${tracks.length} 首歌曲`;
+        const totalCount = (result.data && typeof result.data.total === 'number') ? result.data.total : tracks.length;
+        subEl.textContent = `共 ${totalCount} 首歌曲`;
+
+        // 动态同步更新卡片角标与缓存
+        const targetPl = (state.feiniuPlaylists || []).find(x => x.guid === guid);
+        if (targetPl) targetPl.trackCount = totalCount;
+        const badgeEl = document.getElementById(`fn-badge-${guid}`);
+        if (badgeEl) badgeEl.textContent = `🎵 ${totalCount} 首`;
+        const trackCountEl = document.getElementById('stat-fn-track-count');
+        if (trackCountEl) {
+            const totalTracks = (state.feiniuPlaylists || []).reduce((sum, p) => sum + (p.trackCount || 0), 0);
+            trackCountEl.textContent = totalTracks;
+        }
 
         if (tracks.length === 0) {
             tbody.innerHTML = `<tr><td colspan="7" class="empty-state"><p>此歌单内暂无歌曲</p></td></tr>`;
