@@ -18,3 +18,7 @@ _recycle_bin/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# 外部参考源码
+GoMusic-main/
+

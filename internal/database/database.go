@@ -66,6 +66,17 @@ type LosslessRecord struct {
 	UpdatedAt      int64   `json:"updated_at"`
 }
 
+// PlaylistHistoryRecord 歌单提取历史记录
+type PlaylistHistoryRecord struct {
+	ID        int64  `json:"id"`
+	Platform  string `json:"platform"`
+	SourceURL string `json:"source_url"`
+	Title     string `json:"title"`
+	SongCount int    `json:"song_count"`
+	SongsJSON string `json:"songs_json"`
+	CreatedAt int64  `json:"created_at"`
+}
+
 // DB 数据库操作句柄
 type DB struct {
 	db *sql.DB
@@ -155,6 +166,17 @@ func (d *DB) initSchema() error {
 		details TEXT,
 		updated_at INTEGER
 	);
+
+	CREATE TABLE IF NOT EXISTS playlist_history (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		platform TEXT,
+		source_url TEXT,
+		title TEXT,
+		song_count INTEGER,
+		songs_json TEXT,
+		created_at INTEGER
+	);
+	CREATE INDEX IF NOT EXISTS idx_playlist_created ON playlist_history(created_at DESC);
 	`
 	_, err := d.db.Exec(schema)
 	return err
@@ -445,3 +467,83 @@ func (d *DB) ClearLosslessRecords(ctx context.Context) error {
 	_, err := d.db.ExecContext(ctx, "DELETE FROM lossless_records")
 	return err
 }
+
+// SavePlaylistHistory 保存歌单提取历史
+func (d *DB) SavePlaylistHistory(ctx context.Context, r *PlaylistHistoryRecord) (int64, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	query := `INSERT INTO playlist_history (platform, source_url, title, song_count, songs_json, created_at)
+	          VALUES (?, ?, ?, ?, ?, ?)`
+	res, err := d.db.ExecContext(ctx, query, r.Platform, r.SourceURL, r.Title, r.SongCount, r.SongsJSON, r.CreatedAt)
+	if err != nil {
+		return 0, err
+	}
+	return res.LastInsertId()
+}
+
+// ListPlaylistHistory 获取歌单提取历史列表（默认不返回过大的 songs_json，或保留前 N 条）
+func (d *DB) ListPlaylistHistory(ctx context.Context, limit int) ([]PlaylistHistoryRecord, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `SELECT id, platform, source_url, title, song_count, songs_json, created_at 
+	          FROM playlist_history ORDER BY created_at DESC LIMIT ?`
+	rows, err := d.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var list []PlaylistHistoryRecord
+	for rows.Next() {
+		var r PlaylistHistoryRecord
+		if err := rows.Scan(&r.ID, &r.Platform, &r.SourceURL, &r.Title, &r.SongCount, &r.SongsJSON, &r.CreatedAt); err != nil {
+			return nil, err
+		}
+		list = append(list, r)
+	}
+	return list, nil
+}
+
+// GetPlaylistHistory 获取单条歌单历史详情
+func (d *DB) GetPlaylistHistory(ctx context.Context, id int64) (*PlaylistHistoryRecord, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	query := `SELECT id, platform, source_url, title, song_count, songs_json, created_at 
+	          FROM playlist_history WHERE id = ?`
+	row := d.db.QueryRowContext(ctx, query, id)
+
+	var r PlaylistHistoryRecord
+	if err := row.Scan(&r.ID, &r.Platform, &r.SourceURL, &r.Title, &r.SongCount, &r.SongsJSON, &r.CreatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return &r, nil
+}
+
+// DeletePlaylistHistory 删除单条歌单提取历史
+func (d *DB) DeletePlaylistHistory(ctx context.Context, id int64) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.ExecContext(ctx, "DELETE FROM playlist_history WHERE id = ?", id)
+	return err
+}
+
+// ClearPlaylistHistory 清空所有歌单历史
+func (d *DB) ClearPlaylistHistory(ctx context.Context) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	_, err := d.db.ExecContext(ctx, "DELETE FROM playlist_history")
+	return err
+}
+

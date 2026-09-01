@@ -23,6 +23,7 @@ import (
 	"music-toolkit/internal/detector"
 	"music-toolkit/internal/fileop"
 	"music-toolkit/internal/lossless"
+	"music-toolkit/internal/playlist"
 )
 
 // TaskProgress 通用任务进度
@@ -49,6 +50,7 @@ type Server struct {
 	detector   *detector.Detector
 	dedup      *deduplicator.Deduplicator
 	fileOp     *fileop.FileOperator
+	playlist   *playlist.Extractor
 	frontendFS http.FileSystem
 
 	mu            sync.Mutex
@@ -62,6 +64,7 @@ func NewServer(cfg *config.Config, db *database.DB, frontendFS http.FileSystem) 
 	det := detector.NewDetector()
 	dedup := deduplicator.NewDeduplicator(db, det, cfg.FFmpegPath)
 	fileOp := fileop.NewFileOperator(cfg.MusicDir, cfg.OutputDir)
+	pl := playlist.NewExtractor()
 
 	s := &Server{
 		cfg:          cfg,
@@ -69,6 +72,7 @@ func NewServer(cfg *config.Config, db *database.DB, frontendFS http.FileSystem) 
 		detector:     det,
 		dedup:        dedup,
 		fileOp:       fileOp,
+		playlist:     pl,
 		frontendFS:   frontendFS,
 		formatProg:   TaskProgress{Status: "idle"},
 		dedupProg:    TaskProgress{Status: "idle"},
@@ -103,6 +107,14 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/lossless/progress", s.handleLosslessProgress)
 	mux.HandleFunc("GET /api/lossless/records", s.handleLosslessRecords)
 	mux.HandleFunc("GET /api/lossless/export", s.handleLosslessExport)
+
+	// 歌单提取相关路由
+	mux.HandleFunc("POST /api/playlist/parse", s.handlePlaylistParse)
+	mux.HandleFunc("GET /api/playlist/history", s.handlePlaylistHistoryList)
+	mux.HandleFunc("GET /api/playlist/history-detail", s.handlePlaylistHistoryDetail)
+	mux.HandleFunc("POST /api/playlist/history-delete", s.handlePlaylistHistoryDelete)
+	mux.HandleFunc("POST /api/playlist/history-clear", s.handlePlaylistHistoryClear)
+	mux.HandleFunc("POST /api/playlist/export", s.handlePlaylistExport)
 
 	mux.HandleFunc("GET /api/audio/stream", s.handleAudioStream)
 
@@ -1201,3 +1213,178 @@ func (s *Server) handleLosslessExport(w http.ResponseWriter, r *http.Request) {
 	}
 	writer.Flush()
 }
+
+// ----------------- 歌单提取与历史 -----------------
+
+func (s *Server) handlePlaylistParse(w http.ResponseWriter, r *http.Request) {
+	var req playlist.ParseRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, `{"detail":"无效的请求参数格式"}`, 400)
+		return
+	}
+
+	result, err := s.playlist.Parse(req)
+	if err != nil {
+		http.Error(w, fmt.Sprintf(`{"detail":%q}`, err.Error()), 400)
+		return
+	}
+
+	// 默认或勾选时保存到 SQLite 历史
+	if req.SaveHistory {
+		songsJSON, _ := json.Marshal(result.Songs)
+		histID, dbErr := s.db.SavePlaylistHistory(r.Context(), &database.PlaylistHistoryRecord{
+			Platform:  result.Platform,
+			SourceURL: result.SourceURL,
+			Title:     result.Title,
+			SongCount: result.SongCount,
+			SongsJSON: string(songsJSON),
+			CreatedAt: time.Now().Unix(),
+		})
+		if dbErr == nil {
+			result.HistoryID = histID
+		}
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handlePlaylistHistoryList(w http.ResponseWriter, r *http.Request) {
+	limitStr := r.URL.Query().Get("limit")
+	limit := 30
+	if l, err := strconv.Atoi(limitStr); err == nil && l > 0 {
+		limit = l
+	}
+
+	records, err := s.db.ListPlaylistHistory(r.Context(), limit)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	type historySummary struct {
+		ID        int64  `json:"id"`
+		Platform  string `json:"platform"`
+		SourceURL string `json:"source_url"`
+		Title     string `json:"title"`
+		SongCount int    `json:"song_count"`
+		CreatedAt int64  `json:"created_at"`
+	}
+
+	list := make([]historySummary, len(records))
+	for i, rec := range records {
+		list[i] = historySummary{
+			ID:        rec.ID,
+			Platform:  rec.Platform,
+			SourceURL: rec.SourceURL,
+			Title:     rec.Title,
+			SongCount: rec.SongCount,
+			CreatedAt: rec.CreatedAt,
+		}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"total":   len(list),
+		"history": list,
+	})
+}
+
+func (s *Server) handlePlaylistHistoryDetail(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "invalid id", 400)
+		return
+	}
+
+	rec, err := s.db.GetPlaylistHistory(r.Context(), id)
+	if err != nil || rec == nil {
+		http.Error(w, "history not found", 404)
+		return
+	}
+
+	var songs []playlist.SongItem
+	if err := json.Unmarshal([]byte(rec.SongsJSON), &songs); err != nil {
+		songs = []playlist.SongItem{}
+	}
+
+	textList := make([]string, len(songs))
+	for i, s := range songs {
+		textList[i] = s.FullText
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":         rec.ID,
+		"platform":   rec.Platform,
+		"source_url": rec.SourceURL,
+		"title":      rec.Title,
+		"song_count": rec.SongCount,
+		"songs":      songs,
+		"text_list":  textList,
+		"raw_text":   strings.Join(textList, "\n"),
+		"created_at": rec.CreatedAt,
+	})
+}
+
+func (s *Server) handlePlaylistHistoryDelete(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	if err := s.db.DeletePlaylistHistory(r.Context(), req.ID); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (s *Server) handlePlaylistHistoryClear(w http.ResponseWriter, r *http.Request) {
+	if err := s.db.ClearPlaylistHistory(r.Context()); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+func (s *Server) handlePlaylistExport(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Title  string   `json:"title"`
+		Format string   `json:"format"` // txt, csv
+		Songs  []string `json:"songs"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json", 400)
+		return
+	}
+
+	filename := req.Title
+	if filename == "" {
+		filename = "playlist"
+	}
+	filename = strings.ReplaceAll(filename, "/", "_")
+	filename = strings.ReplaceAll(filename, "\\", "_")
+
+	if req.Format == "csv" {
+		w.Header().Set("Content-Type", "text/csv; charset=utf-8-sig")
+		w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.csv", url.QueryEscape(filename)))
+		writer := csv.NewWriter(w)
+		writer.Write([]string{"序号", "歌曲信息"})
+		for i, s := range req.Songs {
+			writer.Write([]string{strconv.Itoa(i + 1), s})
+		}
+		writer.Flush()
+		return
+	}
+
+	// 默认为纯文本 .txt
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.txt", url.QueryEscape(filename)))
+	for _, s := range req.Songs {
+		w.Write([]byte(s + "\n"))
+	}
+}
+

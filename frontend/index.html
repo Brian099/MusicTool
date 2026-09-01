@@ -65,6 +65,11 @@
                         <span>真假无损鉴别</span>
                         <span class="badge-accent">FLAC/APE</span>
                     </button>
+                    <button class="nav-tab" data-tab="tab-playlist">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle><line x1="3" y1="6" x2="6" y2="6"></line><line x1="3" y1="10" x2="6" y2="10"></line></svg>
+                        <span>歌单文本提取</span>
+                        <span class="badge-accent">网易/QQ/汽水</span>
+                    </button>
                 </nav>
 
                 <!-- 明暗主题切换 -->
@@ -503,6 +508,201 @@
                                             <td colspan="7" class="empty-state">
                                                 <div class="empty-icon">🎼</div>
                                                 <p>点击左侧“开始鉴别无损真伪”扫描曲库中的 FLAC / APE 文件</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TAB 4: 歌单文本提取器 (网易云/QQ/汽水音乐) -->
+            <section id="tab-playlist" class="tab-content">
+                <div class="grid-layout">
+                    <!-- 控制侧边栏 -->
+                    <div class="control-panel glass-panel">
+                        <div class="panel-header">
+                            <h2>歌单文本提取</h2>
+                            <p class="subtitle">支持网易云音乐、QQ音乐、汽水音乐一键解析并生成标准歌单文本</p>
+                        </div>
+
+                        <form id="form-playlist-parse" class="config-form">
+                            <div class="form-group">
+                                <label for="playlist-url">歌单分享链接或文案</label>
+                                <textarea id="playlist-url" class="input-text" rows="3" placeholder="例如：https://music.163.com/#/playlist?id=xxx 或从手机 App 复制的整段分享文本" required></textarea>
+                                <span class="input-hint">自动从分享文本中智能识别出网易云、QQ音乐或汽水音乐歌单链接</span>
+                            </div>
+
+                            <div class="form-group">
+                                <label for="playlist-format">输出歌曲格式</label>
+                                <select id="playlist-format" class="select-input">
+                                    <option value="song-singer" selected>歌名 - 歌手 (默认推荐，兼容性最佳)</option>
+                                    <option value="singer-song">歌手 - 歌名</option>
+                                    <option value="song">仅歌名</option>
+                                </select>
+                            </div>
+
+                            <div class="form-group" style="display: flex; flex-direction: column; gap: 8px;">
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="playlist-detailed">
+                                    <span>详细歌曲名 (保留 Live/Remix/括号等后缀)</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="playlist-reverse">
+                                    <span>倒序排列歌单</span>
+                                </label>
+                                <label class="checkbox-label">
+                                    <input type="checkbox" id="playlist-save-history" checked>
+                                    <span>保存到本地历史记录</span>
+                                </label>
+                            </div>
+
+                            <button type="submit" id="btn-start-playlist" class="btn btn-primary btn-glow">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+                                <span>🚀 开始提取歌单</span>
+                            </button>
+                        </form>
+
+                        <div class="divider"></div>
+
+                        <!-- 迁移指南说明 -->
+                        <div class="smart-clean-box" style="background: rgba(59, 130, 246, 0.06); border-color: rgba(59, 130, 246, 0.2);">
+                            <h3 style="color: #3b82f6;">💡 跨平台歌单迁移指南</h3>
+                            <p style="margin-bottom: 8px;">一键将国内音乐歌单迁移至 Apple Music / Spotify / YouTube Music：</p>
+                            <ol style="font-size: 11px; color: var(--text-muted); padding-left: 18px; line-height: 1.8;">
+                                <li>提取成功后点击右侧「📋 复制纯文本」</li>
+                                <li>打开 <a href="https://www.tunemymusic.com/zh-CN/transfer" target="_blank" style="color: #3b82f6; text-decoration: underline;">TuneMyMusic</a> 或 <a href="https://spotlistr.com/" target="_blank" style="color: #3b82f6; text-decoration: underline;">Spotlistr</a></li>
+                                <li>选择歌单来源为<strong>“任意文本 (Any text / Free text)”</strong>，粘贴进去</li>
+                                <li>选择目标平台确认迁移即可！</li>
+                            </ol>
+                        </div>
+                    </div>
+
+                    <!-- 提取结果展示区 -->
+                    <div class="display-panel">
+                        <!-- 统计概览卡片 -->
+                        <div class="stats-grid">
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-total">🏷️</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">来源音乐平台</span>
+                                    <span class="stat-value" id="stat-pl-platform">-</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-count">🎵</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">解析歌曲总数</span>
+                                    <span class="stat-value" id="stat-pl-count">0</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel">
+                                <div class="stat-icon icon-ok">⚡</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">解析耗时</span>
+                                    <span class="stat-value" id="stat-pl-time">0.00s</span>
+                                </div>
+                            </div>
+                            <div class="stat-card glass-panel highlight-accent">
+                                <div class="stat-icon icon-dup">📚</div>
+                                <div class="stat-info">
+                                    <span class="stat-label">已存历史记录</span>
+                                    <span class="stat-value" id="stat-pl-history-count">0</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 进度加载动画条 -->
+                        <div id="playlist-progress-container" class="progress-panel glass-panel hidden">
+                            <div class="progress-header">
+                                <span class="progress-title" id="pl-progress-text">正在连接平台 API 解析歌单数据...</span>
+                                <span class="progress-percent" id="pl-progress-percent">解析中...</span>
+                            </div>
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" style="width: 100%; animation: pulse-glow 1.5s infinite;"></div>
+                            </div>
+                        </div>
+
+                        <!-- 歌曲列表卡片 -->
+                        <div class="table-panel glass-panel">
+                            <div class="table-header">
+                                <div>
+                                    <h3 id="playlist-result-title">解析歌曲列表</h3>
+                                    <span class="table-subtitle" id="playlist-result-subtitle">请输入链接提取歌单或从下方历史载入</span>
+                                </div>
+                                <div class="table-actions">
+                                    <input type="text" id="pl-filter-query" class="input-search" placeholder="搜索歌曲名或歌手...">
+                                    <div class="btn-group-actions">
+                                        <button id="btn-pl-copy-all" class="btn btn-primary btn-sm" title="一键复制纯文本歌曲列表，方便直接粘贴迁移">
+                                            📋 复制纯文本
+                                        </button>
+                                        <button id="btn-pl-export-txt" class="btn btn-secondary btn-sm" title="导出为 .txt 文件">
+                                            💾 导出 TXT
+                                        </button>
+                                        <button id="btn-pl-export-csv" class="btn btn-secondary btn-sm" title="导出为 .csv 文件">
+                                            📑 导出 CSV
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="table-container" style="max-height: 420px; overflow-y: auto;">
+                                <table class="data-table" id="table-playlist-songs">
+                                    <thead>
+                                        <tr>
+                                            <th width="60">序号</th>
+                                            <th>歌曲名称</th>
+                                            <th>歌手 / 艺术家</th>
+                                            <th>标准显示文本</th>
+                                            <th width="100">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="pl-songs-body">
+                                        <tr>
+                                            <td colspan="5" class="empty-state">
+                                                <div class="empty-icon">🎵</div>
+                                                <p>在左侧粘贴网易云 / QQ音乐 / 汽水音乐歌单链接后点击“开始提取”</p>
+                                            </td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 历史提取记录面板 -->
+                        <div class="table-panel glass-panel" style="margin-top: 16px;">
+                            <div class="table-header">
+                                <div>
+                                    <h3>📑 本地历史提取记录</h3>
+                                    <span class="table-subtitle">记录此前已解析过的歌单，可随时重新展开查看或复制</span>
+                                </div>
+                                <div class="table-actions">
+                                    <button id="btn-pl-refresh-history" class="btn btn-secondary btn-sm" title="刷新历史列表">
+                                        🔄 刷新
+                                    </button>
+                                    <button id="btn-pl-clear-history" class="btn btn-danger-outline btn-sm" title="清空全部历史记录">
+                                        🗑️ 清空历史
+                                    </button>
+                                </div>
+                            </div>
+
+                            <div class="table-container" style="max-height: 240px; overflow-y: auto;">
+                                <table class="data-table" id="table-playlist-history">
+                                    <thead>
+                                        <tr>
+                                            <th width="90">平台</th>
+                                            <th>歌单标题</th>
+                                            <th width="100">歌曲数</th>
+                                            <th width="160">提取时间</th>
+                                            <th width="140">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="pl-history-body">
+                                        <tr>
+                                            <td colspan="5" class="empty-state">
+                                                <p>暂无历史提取记录</p>
                                             </td>
                                         </tr>
                                     </tbody>

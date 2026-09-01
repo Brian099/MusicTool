@@ -21,6 +21,12 @@ const API = {
     losslessProgress: '/api/lossless/progress',
     losslessRecords: '/api/lossless/records',
     losslessExport: '/api/lossless/export',
+    playlistParse: '/api/playlist/parse',
+    playlistHistory: '/api/playlist/history',
+    playlistHistoryDetail: '/api/playlist/history-detail',
+    playlistHistoryDelete: '/api/playlist/history-delete',
+    playlistHistoryClear: '/api/playlist/history-clear',
+    playlistExport: '/api/playlist/export',
     audioStream: '/api/audio/stream'
 };
 
@@ -29,6 +35,9 @@ const state = {
     system: null,
     formatRecords: [],
     losslessRecords: [],
+    playlistSongs: [],
+    playlistRawResult: null,
+    playlistHistory: [],
     formatPollingTimer: null,
     dedupPollingTimer: null,
     losslessPollingTimer: null,
@@ -283,6 +292,8 @@ function initNavTabs() {
                 loadFormatRecords();
             } else if (targetId === 'tab-lossless') {
                 loadLosslessRecords();
+            } else if (targetId === 'tab-playlist') {
+                loadPlaylistHistory();
             }
         });
     });
@@ -1281,6 +1292,331 @@ window.cleanSingleFile = async function(encodedPath) {
     }
 };
 
+// ==================== TAB 4: 歌单文本提取器 ====================
+
+function initPlaylistExtractor() {
+    const form = document.getElementById('form-playlist-parse');
+    const urlInput = document.getElementById('playlist-url');
+    const formatSelect = document.getElementById('playlist-format');
+    const detailedCheck = document.getElementById('playlist-detailed');
+    const reverseCheck = document.getElementById('playlist-reverse');
+    const saveHistoryCheck = document.getElementById('playlist-save-history');
+    const submitBtn = document.getElementById('btn-start-playlist');
+    const progressContainer = document.getElementById('playlist-progress-container');
+
+    // 表单提交解析
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const url = urlInput.value.trim();
+        if (!url) {
+            showToast('请输入歌单分享链接或分享文案', 'warn');
+            return;
+        }
+
+        submitBtn.disabled = true;
+        progressContainer.classList.remove('hidden');
+
+        try {
+            const res = await fetch(API.playlistParse, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url: url,
+                    detailed: detailedCheck.checked,
+                    format: formatSelect.value,
+                    order: reverseCheck.checked ? 'reverse' : 'default',
+                    save_history: saveHistoryCheck.checked
+                })
+            });
+
+            const data = await res.json();
+            if (!res.ok) {
+                showToast(data.detail || '解析歌单失败，请检查链接是否正确', 'error');
+                return;
+            }
+
+            state.playlistRawResult = data;
+            state.playlistSongs = data.songs || [];
+
+            // 更新统计卡片
+            const platformNames = {
+                'netease': '🔴 网易云音乐',
+                'qq': '🟢 QQ音乐',
+                'qishui': '🥤 汽水音乐'
+            };
+            document.getElementById('stat-pl-platform').textContent = platformNames[data.platform] || data.platform;
+            document.getElementById('stat-pl-count').textContent = data.song_count;
+            document.getElementById('stat-pl-time').textContent = `${data.parse_time.toFixed(2)}s`;
+
+            // 更新标题
+            document.getElementById('playlist-result-title').textContent = data.title || '歌单歌曲列表';
+            document.getElementById('playlist-result-subtitle').textContent = `共解析出 ${data.song_count} 首歌曲 (${platformNames[data.platform] || data.platform})`;
+
+            renderPlaylistSongs();
+            showToast(`成功解析歌单「${data.title}」，共 ${data.song_count} 首歌曲！`, 'success');
+
+            // 刷新历史
+            loadPlaylistHistory();
+        } catch (err) {
+            showToast('请求解析歌单异常: ' + err.message, 'error');
+        } finally {
+            submitBtn.disabled = false;
+            progressContainer.classList.add('hidden');
+        }
+    });
+
+    // 搜索过滤
+    document.getElementById('pl-filter-query').addEventListener('input', (e) => {
+        renderPlaylistSongs(e.target.value);
+    });
+
+    // 复制纯文本
+    document.getElementById('btn-pl-copy-all').addEventListener('click', async () => {
+        if (!state.playlistSongs || state.playlistSongs.length === 0) {
+            showToast('当前没有可复制的歌曲列表', 'warn');
+            return;
+        }
+        const text = state.playlistSongs.map(s => s.full_text).join('\n');
+        try {
+            await navigator.clipboard.writeText(text);
+            showToast(`已成功复制 ${state.playlistSongs.length} 首歌曲文本到剪贴板！可以直接粘贴到迁移工具`, 'success');
+        } catch (err) {
+            // 降级复制
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand('copy');
+            document.body.removeChild(ta);
+            showToast(`已成功复制 ${state.playlistSongs.length} 首歌曲文本！`, 'success');
+        }
+    });
+
+    // 导出 TXT
+    document.getElementById('btn-pl-export-txt').addEventListener('click', () => {
+        if (!state.playlistSongs || state.playlistSongs.length === 0) {
+            showToast('当前没有歌曲可导出', 'warn');
+            return;
+        }
+        const title = (state.playlistRawResult && state.playlistRawResult.title) || 'playlist';
+        const songs = state.playlistSongs.map(s => s.full_text);
+        exportPlaylistFile(title, 'txt', songs);
+    });
+
+    // 导出 CSV
+    document.getElementById('btn-pl-export-csv').addEventListener('click', () => {
+        if (!state.playlistSongs || state.playlistSongs.length === 0) {
+            showToast('当前没有歌曲可导出', 'warn');
+            return;
+        }
+        const title = (state.playlistRawResult && state.playlistRawResult.title) || 'playlist';
+        const songs = state.playlistSongs.map(s => s.full_text);
+        exportPlaylistFile(title, 'csv', songs);
+    });
+
+    // 刷新历史
+    document.getElementById('btn-pl-refresh-history').addEventListener('click', loadPlaylistHistory);
+
+    // 清空历史
+    document.getElementById('btn-pl-clear-history').addEventListener('click', async () => {
+        if (!confirm('确定要清空所有本地歌单提取历史记录吗？')) return;
+        try {
+            await fetch(API.playlistHistoryClear, { method: 'POST' });
+            showToast('已清空本地历史记录', 'success');
+            loadPlaylistHistory();
+        } catch (e) {
+            showToast('清空历史失败: ' + e.message, 'error');
+        }
+    });
+}
+
+function exportPlaylistFile(title, format, songs) {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = API.playlistExport;
+    form.target = '_blank';
+
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = 'payload';
+
+    fetch(API.playlistExport, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, format, songs })
+    }).then(res => res.blob()).then(blob => {
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `${title}.${format}`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+    }).catch(err => {
+        showToast('导出失败: ' + err.message, 'error');
+    });
+}
+
+function renderPlaylistSongs(query = '') {
+    const tbody = document.getElementById('pl-songs-body');
+    let songs = state.playlistSongs || [];
+
+    if (query.trim()) {
+        const q = query.toLowerCase();
+        songs = songs.filter(s => s.song_name.toLowerCase().includes(q) || s.artist.toLowerCase().includes(q) || s.full_text.toLowerCase().includes(q));
+    }
+
+    if (songs.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="empty-state">
+                    <p>未找到匹配的歌曲</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    tbody.innerHTML = songs.map(s => {
+        const encText = encodeURIComponent(s.full_text);
+        return `
+            <tr>
+                <td style="font-family: var(--font-mono); color: var(--text-muted);">${s.index}</td>
+                <td><strong style="color: var(--text-main);">${escapeHtml(s.song_name)}</strong></td>
+                <td><span style="color: var(--accent-primary);">${escapeHtml(s.artist || '-')}</span></td>
+                <td><span style="font-family: var(--font-mono); font-size: 12px; color: var(--text-sub);">${escapeHtml(s.full_text)}</span></td>
+                <td class="action-cell">
+                    <button class="btn btn-secondary btn-sm" onclick="copySingleSong('${encText}')" title="复制单曲名称与歌手">
+                        📋 复制
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.copySingleSong = function(encodedText) {
+    const text = decodeURIComponent(encodedText);
+    navigator.clipboard.writeText(text).then(() => {
+        showToast(`已复制: ${text}`, 'info');
+    });
+};
+
+async function loadPlaylistHistory() {
+    try {
+        const res = await fetch(`${API.playlistHistory}?limit=30`);
+        const data = await res.json();
+        state.playlistHistory = data.history || [];
+
+        document.getElementById('stat-pl-history-count').textContent = data.total || 0;
+        renderPlaylistHistory();
+    } catch (e) {
+        console.error('拉取歌单历史失败:', e);
+    }
+}
+
+function renderPlaylistHistory() {
+    const tbody = document.getElementById('pl-history-body');
+    const history = state.playlistHistory || [];
+
+    if (history.length === 0) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="5" class="empty-state">
+                    <p>暂无历史提取记录</p>
+                </td>
+            </tr>
+        `;
+        return;
+    }
+
+    const platformBadges = {
+        'netease': '<span class="badge-fmt fmt-corrupt">网易云</span>',
+        'qq': '<span class="badge-fmt fmt-flac">QQ音乐</span>',
+        'qishui': '<span class="badge-fmt fmt-wav">汽水音乐</span>'
+    };
+
+    tbody.innerHTML = history.map(h => {
+        const dateStr = new Date(h.created_at * 1000).toLocaleString('zh-CN', {
+            month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit'
+        });
+
+        return `
+            <tr>
+                <td>${platformBadges[h.platform] || h.platform}</td>
+                <td>
+                    <div class="song-main-info">
+                        <strong style="color: var(--text-main); font-size: 13px;">${escapeHtml(h.title || '未命名歌单')}</strong>
+                        <span class="song-path" style="max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(h.source_url)}</span>
+                    </div>
+                </td>
+                <td><span style="font-family: var(--font-mono); font-weight: 600;">${h.song_count} 首</span></td>
+                <td><span style="font-size: 12px; color: var(--text-muted);">${dateStr}</span></td>
+                <td class="action-cell">
+                    <div class="action-btn-group">
+                        <button class="btn btn-primary btn-sm" onclick="loadHistoryDetail(${h.id})" title="展开查看此歌单歌曲">
+                            📂 载入
+                        </button>
+                        <button class="btn btn-danger-outline btn-sm" onclick="deleteHistoryItem(${h.id})" title="删除此记录">
+                            🗑️
+                        </button>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }).join('');
+}
+
+window.loadHistoryDetail = async function(id) {
+    try {
+        const res = await fetch(`${API.playlistHistoryDetail}?id=${id}`);
+        if (!res.ok) {
+            showToast('载入历史歌单详情失败', 'error');
+            return;
+        }
+        const data = await res.json();
+        state.playlistRawResult = data;
+        state.playlistSongs = data.songs || [];
+
+        const platformNames = {
+            'netease': '🔴 网易云音乐',
+            'qq': '🟢 QQ音乐',
+            'qishui': '🥤 汽水音乐'
+        };
+        document.getElementById('stat-pl-platform').textContent = platformNames[data.platform] || data.platform;
+        document.getElementById('stat-pl-count').textContent = data.song_count;
+        document.getElementById('stat-pl-time').textContent = '已缓存';
+
+        document.getElementById('playlist-result-title').textContent = data.title || '歌单歌曲列表';
+        document.getElementById('playlist-result-subtitle').textContent = `历史记录共 ${data.song_count} 首歌曲 (${platformNames[data.platform] || data.platform})`;
+
+        renderPlaylistSongs();
+        showToast(`已成功载入历史歌单「${data.title}」`, 'success');
+
+        // 平滑滚动到歌曲卡片
+        document.getElementById('playlist-result-title').scrollIntoView({ behavior: 'smooth' });
+    } catch (e) {
+        showToast('载入历史失败: ' + e.message, 'error');
+    }
+};
+
+window.deleteHistoryItem = async function(id) {
+    try {
+        const res = await fetch(API.playlistHistoryDelete, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ id })
+        });
+        if (res.ok) {
+            showToast('已删除历史记录', 'info');
+            loadPlaylistHistory();
+        }
+    } catch (e) {
+        showToast('删除失败: ' + e.message, 'error');
+    }
+};
+
 // 页面加载启动
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
@@ -1291,5 +1627,7 @@ document.addEventListener('DOMContentLoaded', () => {
     initFormatChecker();
     initDeduplicator();
     initLosslessChecker();
+    initPlaylistExtractor();
     loadFormatRecords();
 });
+

@@ -1388,3 +1388,9 @@ body.dark-theme .modal-footer {
 .hidden {
     display: none !important;
 }
+
+@keyframes pulse-glow {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
+}
