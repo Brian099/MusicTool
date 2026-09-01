@@ -1058,13 +1058,28 @@ document.getElementById('btn-close-player').addEventListener('click', () => {
     playerBar.classList.add('hidden');
 });
 
-function escapeHtml(str) {
-    if (!str) return '';
+function escapeHtml(val) {
+    if (val === null || val === undefined) return '';
+    if (typeof val === 'object') {
+        val = val.name || val.title || val.message || JSON.stringify(val);
+    }
+    const str = String(val);
     return str.replace(/&/g, '&amp;')
               .replace(/</g, '&lt;')
               .replace(/>/g, '&gt;')
               .replace(/"/g, '&quot;')
               .replace(/'/g, '&#039;');
+}
+
+function formatDuration(dur) {
+    if (!dur || isNaN(dur)) return '--:--';
+    let sec = Number(dur);
+    if (sec > 1000) {
+        sec = Math.floor(sec / 1000);
+    }
+    const m = Math.floor(sec / 60);
+    const s = Math.floor(sec % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
 }
 
 function initThemeToggle() {
@@ -1958,11 +1973,19 @@ window.viewFeiNiuPlaylist = async function(guid, name) {
 
         tbody.innerHTML = tracks.map((t, idx) => {
             const safeTitle = escapeHtml(t.title || '未知歌曲');
-            const artists = (t.artists || []).map(a => a.name).join(' / ') || '未知歌手';
-            const album = escapeHtml(t.album || '-');
+            const artists = (t.artists || []).map(a => (typeof a === 'object' ? a.name : a)).filter(Boolean).join(' / ') || '未知歌手';
+            let albumName = '-';
+            if (t.album) {
+                if (typeof t.album === 'object') {
+                    albumName = t.album.name || t.album.title || '-';
+                } else {
+                    albumName = String(t.album);
+                }
+            }
+            const album = escapeHtml(albumName);
             const format = (t.audioSpec && t.audioSpec.format ? t.audioSpec.format.toUpperCase() : 'AUDIO');
             const bitrate = (t.audioSpec && t.audioSpec.bitrate) ? `${Math.round(t.audioSpec.bitrate / 1000)}k` : '';
-            const duration = formatDuration(t.duration);
+            const duration = formatDuration(t.duration || (t.audioSpec && t.audioSpec.duration));
 
             return `
                 <tr>
