@@ -1,7 +1,7 @@
 # ==========================================
 # Stage 1: 跨平台纯静态 Go 二进制构建
 # ==========================================
-FROM golang:1.22-alpine AS builder
+FROM golang:alpine AS builder
 
 WORKDIR /build
 
