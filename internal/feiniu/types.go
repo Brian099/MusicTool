@@ -1,6 +1,10 @@
 package feiniu
 
-import "music-toolkit/internal/playlist"
+import (
+	"encoding/json"
+
+	"music-toolkit/internal/playlist"
+)
 
 // FeiNiuResponse 飞牛官方通用响应结构
 type FeiNiuResponse[T any] struct {
@@ -39,35 +43,126 @@ type FeiNiuPlaylist struct {
 	UpdatedAt  int64  `json:"updatedAt"`
 }
 
-// FeiNiuArtist 歌手信息
+// FeiNiuAlbum 飞牛专辑模型（支持嵌套对象或字符串解析）
+type FeiNiuAlbum struct {
+	GUID       string `json:"guid,omitempty"`
+	Name       string `json:"name,omitempty"`
+	Title      string `json:"title,omitempty"`
+	CoverID    string `json:"coverId,omitempty"`
+	TrackCount int    `json:"trackCount,omitempty"`
+}
+
+func (a *FeiNiuAlbum) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		a.Name = s
+		a.Title = s
+		return nil
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	if v, ok := raw["guid"].(string); ok {
+		a.GUID = v
+	}
+	if v, ok := raw["name"].(string); ok {
+		a.Name = v
+	}
+	if v, ok := raw["title"].(string); ok && a.Name == "" {
+		a.Name = v
+		a.Title = v
+	}
+	if v, ok := raw["coverId"].(string); ok {
+		a.CoverID = v
+	}
+	if v, ok := raw["trackCount"].(float64); ok {
+		a.TrackCount = int(v)
+	}
+	return nil
+}
+
+// FeiNiuArtist 歌手信息（支持嵌套对象或字符串解析）
 type FeiNiuArtist struct {
-	GUID string `json:"guid"`
-	Name string `json:"name"`
+	GUID string `json:"guid,omitempty"`
+	Name string `json:"name,omitempty"`
+}
+
+func (a *FeiNiuArtist) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		a.Name = s
+		return nil
+	}
+	var raw map[string]any
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+	if v, ok := raw["guid"].(string); ok {
+		a.GUID = v
+	}
+	if v, ok := raw["name"].(string); ok {
+		a.Name = v
+	}
+	return nil
 }
 
 // FeiNiuAudioSpec 音频规格
 type FeiNiuAudioSpec struct {
-	Format     string  `json:"format"`
-	Bitrate    int     `json:"bitrate"`
-	SampleRate int     `json:"sampleRate"`
-	Channels   int     `json:"channels"`
-	Duration   float64 `json:"duration"`
-	Path       string  `json:"path"`
+	Format     string  `json:"format,omitempty"`
+	Bitrate    int     `json:"bitrate,omitempty"`
+	SampleRate int     `json:"sampleRate,omitempty"`
+	Channels   int     `json:"channels,omitempty"`
+	Channel    int     `json:"channel,omitempty"`
+	Duration   float64 `json:"duration,omitempty"`
+	Path       string  `json:"path,omitempty"`
 }
 
 // FeiNiuTrack 飞牛单曲模型
 type FeiNiuTrack struct {
 	GUID        string          `json:"guid"`
 	Title       string          `json:"title"`
-	ArtistGUIDs []string        `json:"artistGUIDs"`
-	Artists     []FeiNiuArtist  `json:"artists"`
-	Album       string          `json:"album"`
-	AlbumGUID   string          `json:"albumGUID"`
-	CoverID     string          `json:"coverId"`
-	Duration    float64         `json:"duration"`
-	AudioSpec   FeiNiuAudioSpec `json:"audioSpec"`
-	CreatedAt   int64           `json:"createdAt"`
-	UpdatedAt   int64           `json:"updatedAt"`
+	ArtistGUIDs []string        `json:"artistGUIDs,omitempty"`
+	Artists     []FeiNiuArtist  `json:"artists,omitempty"`
+	Album       FeiNiuAlbum     `json:"album,omitempty"`
+	AlbumGUID   string          `json:"albumGUID,omitempty"`
+	CoverID     string          `json:"coverId,omitempty"`
+	Duration    float64         `json:"duration,omitempty"`
+	AudioSpec   FeiNiuAudioSpec `json:"audioSpec,omitempty"`
+	CreatedAt   int64           `json:"createdAt,omitempty"`
+	UpdatedAt   int64           `json:"updatedAt,omitempty"`
+}
+
+func (t *FeiNiuTrack) GetArtistNames() []string {
+	var names []string
+	for _, a := range t.Artists {
+		if a.Name != "" {
+			names = append(names, a.Name)
+		}
+	}
+	return names
+}
+
+func (t *FeiNiuTrack) GetAlbumName() string {
+	if t.Album.Name != "" {
+		return t.Album.Name
+	}
+	if t.Album.Title != "" {
+		return t.Album.Title
+	}
+	return ""
 }
 
 // ConnectRequest 连接飞牛 NAS 请求

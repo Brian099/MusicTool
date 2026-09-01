@@ -173,3 +173,104 @@ func TestClientMockServerAndAutoRelogin(t *testing.T) {
 		t.Fatalf("expected 2 logins (initial + auto relogin), got %d", loginCount)
 	}
 }
+
+func TestFeiNiuTrackJsonUnmarshal(t *testing.T) {
+	rawJSON := `{
+		"guid": "track-123",
+		"title": "红色高跟鞋",
+		"album": {
+			"guid": "album-456",
+			"name": "若你碰到他",
+			"coverId": "cover-789"
+		},
+		"artists": [
+			{"guid": "art-1", "name": "蔡健雅"}
+		],
+		"audioSpec": {
+			"format": "mp3",
+			"bitrate": 320000,
+			"sampleRate": 44100,
+			"channel": 2
+		}
+	}`
+
+	var track FeiNiuTrack
+	if err := json.Unmarshal([]byte(rawJSON), &track); err != nil {
+		t.Fatalf("unmarshal FeiNiuTrack with object album failed: %v", err)
+	}
+	if track.Title != "红色高跟鞋" || track.GetAlbumName() != "若你碰到他" {
+		t.Fatalf("unexpected track data: %+v", track)
+	}
+	if len(track.GetArtistNames()) != 1 || track.GetArtistNames()[0] != "蔡健雅" {
+		t.Fatalf("unexpected artist names: %+v", track.GetArtistNames())
+	}
+}
+
+func TestImporterMatchingRealWorld(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/music/api/v1/search/track" {
+			q := r.URL.Query().Get("q")
+			var list []FeiNiuTrack
+			if q == "红色高跟鞋" {
+				list = append(list, FeiNiuTrack{
+					GUID:  "guid-red-shoes",
+					Title: "红色高跟鞋",
+					Artists: []FeiNiuArtist{
+						{GUID: "art-cjy", Name: "蔡健雅"},
+					},
+					Album: FeiNiuAlbum{Name: "若你碰到他"},
+				})
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(FeiNiuResponse[FeiNiuPageData[FeiNiuTrack]]{
+				Code: 0,
+				Data: FeiNiuPageData[FeiNiuTrack]{
+					Total: len(list),
+					List:  list,
+				},
+			})
+			return
+		}
+		if r.URL.Path == "/music/api/v1/playlist/create" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(FeiNiuResponse[FeiNiuPlaylist]{
+				Code: 0,
+				Data: FeiNiuPlaylist{
+					GUID: "new-pl-1",
+					Name: "华语经典",
+				},
+			})
+			return
+		}
+		if r.URL.Path == "/music/api/v1/playlist/add-track" {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(FeiNiuResponse[any]{Code: 0})
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+
+	client := NewClient(nil)
+	client.serverURL = server.URL
+	client.userToken = "token"
+
+	importer := NewImporter(client)
+	res, err := importer.ImportPlaylist(context.Background(), ImportPlaylistRequest{
+		Name: "华语经典",
+		Songs: []playlist.SongItem{
+			{Index: 1, SongName: "红色高跟鞋", Artist: "蔡健雅"},
+			{Index: 2, SongName: "不存在的歌曲", Artist: "某人"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportPlaylist failed: %v", err)
+	}
+	if res.MatchedCount != 1 || res.UnmatchedCount != 1 {
+		t.Fatalf("expected 1 matched and 1 unmatched, got matched=%d unmatched=%d", res.MatchedCount, res.UnmatchedCount)
+	}
+	if res.Results[0].TrackGUID != "guid-red-shoes" {
+		t.Fatalf("unexpected matched guid: %s", res.Results[0].TrackGUID)
+	}
+}
+

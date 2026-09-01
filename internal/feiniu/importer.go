@@ -200,28 +200,47 @@ func (imp *Importer) MatchSong(ctx context.Context, song playlist.SongItem) (*Im
 	cleanTitle := CleanSongTitle(song.SongName)
 
 	var candidates []FeiNiuTrack
+	seenGUID := make(map[string]bool)
 
-	// 搜索策略 1: 歌名 + 主歌手
-	q1 := strings.TrimSpace(song.SongName + " " + primaryArtist)
-	res1, err := imp.client.SearchTracks(ctx, q1, 1, 10)
-	if err == nil && res1 != nil && len(res1.List) > 0 {
-		candidates = append(candidates, res1.List...)
-	}
-
-	// 搜索策略 2: 清洗后歌名 + 主歌手 (若结果较少或未命中)
-	if len(candidates) < 3 && cleanTitle != song.SongName {
-		q2 := strings.TrimSpace(cleanTitle + " " + primaryArtist)
-		res2, err := imp.client.SearchTracks(ctx, q2, 1, 10)
-		if err == nil && res2 != nil && len(res2.List) > 0 {
-			candidates = append(candidates, res2.List...)
+	addCandidates := func(tracks []FeiNiuTrack) {
+		for _, t := range tracks {
+			if !seenGUID[t.GUID] && t.GUID != "" {
+				seenGUID[t.GUID] = true
+				candidates = append(candidates, t)
+			}
 		}
 	}
 
-	// 搜索策略 3: 仅清洗后的歌名 (用于曲库中歌手标签不标准的情况)
-	if len(candidates) == 0 && cleanTitle != "" {
-		res3, err := imp.client.SearchTracks(ctx, cleanTitle, 1, 10)
-		if err == nil && res3 != nil && len(res3.List) > 0 {
-			candidates = append(candidates, res3.List...)
+	// 搜索策略 1: 纯歌名（最精准，飞牛曲库搜索直接按歌名索引）
+	if cleanTitle != "" {
+		res, err := imp.client.SearchTracks(ctx, cleanTitle, 1, 20)
+		if err == nil && res != nil {
+			addCandidates(res.List)
+		}
+	}
+
+	// 搜索策略 2: 若原始歌名与清洗后不同，搜索原始歌名
+	if len(candidates) < 5 && song.SongName != "" && song.SongName != cleanTitle {
+		res, err := imp.client.SearchTracks(ctx, song.SongName, 1, 20)
+		if err == nil && res != nil {
+			addCandidates(res.List)
+		}
+	}
+
+	// 搜索策略 3: 歌名 + 主歌手联合搜索
+	if len(candidates) == 0 && primaryArtist != "" {
+		q := strings.TrimSpace(cleanTitle + " " + primaryArtist)
+		res, err := imp.client.SearchTracks(ctx, q, 1, 20)
+		if err == nil && res != nil {
+			addCandidates(res.List)
+		}
+	}
+
+	// 搜索策略 4: 主歌手搜索（从该歌手名下寻找匹配歌曲）
+	if len(candidates) == 0 && primaryArtist != "" {
+		res, err := imp.client.SearchTracks(ctx, primaryArtist, 1, 30)
+		if err == nil && res != nil {
+			addCandidates(res.List)
 		}
 	}
 
@@ -236,17 +255,11 @@ func (imp *Importer) MatchSong(ctx context.Context, song playlist.SongItem) (*Im
 		}, nil
 	}
 
-	// 去重并计算最高分
-	seen := make(map[string]bool)
+	// 计算候选歌曲最高分
 	var bestTrack *FeiNiuTrack
 	bestScore := 0.0
 
 	for _, cand := range candidates {
-		if seen[cand.GUID] {
-			continue
-		}
-		seen[cand.GUID] = true
-
 		score := ScoreCandidate(song, cand)
 		if score > bestScore {
 			bestScore = score
@@ -254,11 +267,13 @@ func (imp *Importer) MatchSong(ctx context.Context, song playlist.SongItem) (*Im
 		}
 	}
 
-	// 判定阈值 (>= 0.70 认定为匹配成功)
-	if bestScore >= 0.70 && bestTrack != nil {
+	// 判定阈值 (>= 0.65 认定为匹配成功)
+	if bestScore >= 0.65 && bestTrack != nil {
 		var artistNames []string
 		for _, a := range bestTrack.Artists {
-			artistNames = append(artistNames, a.Name)
+			if a.Name != "" {
+				artistNames = append(artistNames, a.Name)
+			}
 		}
 		return &ImportMatchItem{
 			Index:         song.Index,

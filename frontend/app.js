@@ -1652,7 +1652,9 @@ async function checkFeiNiuStatus() {
         const statSession = document.getElementById('stat-fn-session-status');
 
         if (data.connected) {
-            if (chip) chip.className = 'chip chip-active';
+            if (chip) {
+                chip.classList.add('active');
+            }
             if (chipLabel) chipLabel.textContent = `飞牛: ${data.username || '已连接'}`;
             if (authBadge) {
                 authBadge.className = 'status-indicator-badge connected';
@@ -1670,7 +1672,9 @@ async function checkFeiNiuStatus() {
             if (serverInput && !serverInput.value && data.server_url) serverInput.value = data.server_url;
             if (userInput && !userInput.value && data.username) userInput.value = data.username;
         } else {
-            if (chip) chip.className = 'chip';
+            if (chip) {
+                chip.classList.remove('active');
+            }
             if (chipLabel) chipLabel.textContent = '飞牛NAS';
             if (authBadge) {
                 authBadge.className = 'status-indicator-badge';

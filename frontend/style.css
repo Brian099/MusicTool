@@ -224,12 +224,16 @@ body.dark-theme .chip {
     background: var(--color-danger);
 }
 
-.chip.active .dot {
+.chip.active .dot,
+.chip.chip-active .dot,
+.chip-active .dot {
     background: var(--color-success);
     box-shadow: 0 0 8px var(--color-success);
 }
 
-.chip.active {
+.chip.active,
+.chip.chip-active,
+.chip-active {
     color: var(--text-main);
     border-color: rgba(16, 185, 129, 0.4);
     background: rgba(16, 185, 129, 0.08);
