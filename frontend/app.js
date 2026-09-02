@@ -2419,7 +2419,18 @@ function initFeiNiuImportModal() {
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                const result = await res.json();
+                
+                const rawText = await res.text();
+                let result;
+                try {
+                    result = JSON.parse(rawText);
+                } catch (parseErr) {
+                    throw new Error(`服务端返回了非 JSON 内容 (HTTP ${res.status}): ${rawText.slice(0, 80).replace(/<[^>]*>/g, '').trim() || '页面错误或网关超时'}`);
+                }
+
+                if (!res.ok) {
+                    throw new Error(result.error || result.detail || result.message || `请求失败 (HTTP ${res.status})`);
+                }
 
                 runningArea.classList.add('hidden');
                 resultArea.classList.remove('hidden');

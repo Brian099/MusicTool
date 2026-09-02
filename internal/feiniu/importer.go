@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"music-toolkit/internal/playlist"
@@ -211,11 +212,28 @@ func (imp *Importer) MatchSong(ctx context.Context, song playlist.SongItem) (*Im
 		}
 	}
 
+	findBest := func() (*FeiNiuTrack, float64) {
+		var best *FeiNiuTrack
+		bestScore := 0.0
+		for _, cand := range candidates {
+			score := ScoreCandidate(song, cand)
+			if score > bestScore {
+				bestScore = score
+				best = &cand
+			}
+		}
+		return best, bestScore
+	}
+
 	// 搜索策略 1: 纯歌名（最精准，飞牛曲库搜索直接按歌名索引）
 	if cleanTitle != "" {
 		res, err := imp.client.SearchTracks(ctx, cleanTitle, 1, 20)
 		if err == nil && res != nil {
 			addCandidates(res.List)
+			// 若已获得高分命中（>= 0.85），直接提前收敛，不再浪费额外 HTTP 请求
+			if best, score := findBest(); score >= 0.85 && best != nil {
+				return buildMatchResult(song, best, score), nil
+			}
 		}
 	}
 
@@ -224,6 +242,9 @@ func (imp *Importer) MatchSong(ctx context.Context, song playlist.SongItem) (*Im
 		res, err := imp.client.SearchTracks(ctx, song.SongName, 1, 20)
 		if err == nil && res != nil {
 			addCandidates(res.List)
+			if best, score := findBest(); score >= 0.85 && best != nil {
+				return buildMatchResult(song, best, score), nil
+			}
 		}
 	}
 
@@ -255,36 +276,11 @@ func (imp *Importer) MatchSong(ctx context.Context, song playlist.SongItem) (*Im
 		}, nil
 	}
 
-	// 计算候选歌曲最高分
-	var bestTrack *FeiNiuTrack
-	bestScore := 0.0
-
-	for _, cand := range candidates {
-		score := ScoreCandidate(song, cand)
-		if score > bestScore {
-			bestScore = score
-			bestTrack = &cand
-		}
-	}
+	bestTrack, bestScore := findBest()
 
 	// 判定阈值 (>= 0.65 认定为匹配成功)
 	if bestScore >= 0.65 && bestTrack != nil {
-		var artistNames []string
-		for _, a := range bestTrack.Artists {
-			if a.Name != "" {
-				artistNames = append(artistNames, a.Name)
-			}
-		}
-		return &ImportMatchItem{
-			Index:         song.Index,
-			SongName:      song.SongName,
-			Artist:        song.Artist,
-			Matched:       true,
-			TrackGUID:     bestTrack.GUID,
-			MatchedTitle:  bestTrack.Title,
-			MatchedArtist: strings.Join(artistNames, " / "),
-			Score:         bestScore,
-		}, nil
+		return buildMatchResult(song, bestTrack, bestScore), nil
 	}
 
 	return &ImportMatchItem{
@@ -297,7 +293,26 @@ func (imp *Importer) MatchSong(ctx context.Context, song playlist.SongItem) (*Im
 	}, nil
 }
 
-// ImportPlaylist 导入整个歌单到飞牛 NAS
+func buildMatchResult(song playlist.SongItem, bestTrack *FeiNiuTrack, bestScore float64) *ImportMatchItem {
+	var artistNames []string
+	for _, a := range bestTrack.Artists {
+		if a.Name != "" {
+			artistNames = append(artistNames, a.Name)
+		}
+	}
+	return &ImportMatchItem{
+		Index:         song.Index,
+		SongName:      song.SongName,
+		Artist:        song.Artist,
+		Matched:       true,
+		TrackGUID:     bestTrack.GUID,
+		MatchedTitle:  bestTrack.Title,
+		MatchedArtist: strings.Join(artistNames, " / "),
+		Score:         bestScore,
+	}
+}
+
+// ImportPlaylist 导入整个歌单到飞牛 NAS (并发多协程加速匹配)
 func (imp *Importer) ImportPlaylist(ctx context.Context, req ImportPlaylistRequest) (*ImportPlaylistResult, error) {
 	if len(req.Songs) == 0 {
 		return nil, fmt.Errorf("待导入歌曲列表为空")
@@ -319,43 +334,80 @@ func (imp *Importer) ImportPlaylist(ctx context.Context, req ImportPlaylistReque
 		targetName = newPl.Name
 	}
 
+	totalSongs := len(req.Songs)
+	results := make([]ImportMatchItem, totalSongs)
+
+	// 使用并发工作池加速歌曲匹配检索 (6 并发)
+	concurrency := 6
+	if totalSongs < concurrency {
+		concurrency = totalSongs
+	}
+
+	type matchTask struct {
+		idx  int
+		song playlist.SongItem
+	}
+
+	taskChan := make(chan matchTask, totalSongs)
+	for i, s := range req.Songs {
+		taskChan <- matchTask{idx: i, song: s}
+	}
+	close(taskChan)
+
+	var wg sync.WaitGroup
+	for w := 0; w < concurrency; w++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for t := range taskChan {
+				select {
+				case <-ctx.Done():
+					results[t.idx] = ImportMatchItem{
+						Index:    t.song.Index,
+						SongName: t.song.SongName,
+						Artist:   t.song.Artist,
+						Matched:  false,
+						Error:    "操作被取消",
+					}
+					continue
+				default:
+				}
+
+				matchItem, err := imp.MatchSong(ctx, t.song)
+				if err != nil {
+					results[t.idx] = ImportMatchItem{
+						Index:    t.song.Index,
+						SongName: t.song.SongName,
+						Artist:   t.song.Artist,
+						Matched:  false,
+						Error:    err.Error(),
+					}
+				} else if matchItem != nil {
+					results[t.idx] = *matchItem
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
 	result := &ImportPlaylistResult{
 		PlaylistGUID: targetGUID,
 		PlaylistName: targetName,
-		Total:        len(req.Songs),
-		Results:      make([]ImportMatchItem, 0, len(req.Songs)),
+		Total:        totalSongs,
+		Results:      results,
 	}
 
 	var matchedGUIDs []string
 	var unmatchedSongs []playlist.SongItem
 
-	for _, song := range req.Songs {
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		matchItem, err := imp.MatchSong(ctx, song)
-		if err != nil {
-			matchItem = &ImportMatchItem{
-				Index:    song.Index,
-				SongName: song.SongName,
-				Artist:   song.Artist,
-				Matched:  false,
-				Error:    err.Error(),
-			}
-		}
-
-		if matchItem.Matched && matchItem.TrackGUID != "" {
+	for i, item := range results {
+		if item.Matched && item.TrackGUID != "" {
 			result.MatchedCount++
-			matchedGUIDs = append(matchedGUIDs, matchItem.TrackGUID)
+			matchedGUIDs = append(matchedGUIDs, item.TrackGUID)
 		} else {
 			result.UnmatchedCount++
-			unmatchedSongs = append(unmatchedSongs, song)
+			unmatchedSongs = append(unmatchedSongs, req.Songs[i])
 		}
-
-		result.Results = append(result.Results, *matchItem)
 	}
 
 	result.UnmatchedSongs = unmatchedSongs
