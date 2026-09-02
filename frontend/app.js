@@ -1684,7 +1684,13 @@ async function checkFeiNiuStatus() {
             // 自动填充已保存的地址和用户名
             const serverInput = document.getElementById('fn-server-url');
             const userInput = document.getElementById('fn-username');
-            if (serverInput && !serverInput.value && data.server_url) serverInput.value = data.server_url;
+            if (serverInput) {
+                if (data.server_url) {
+                    serverInput.value = data.server_url;
+                } else if (!serverInput.value) {
+                    serverInput.value = 'http://172.17.0.1:5666';
+                }
+            }
             if (userInput && !userInput.value && data.username) userInput.value = data.username;
         } else {
             if (chip) {
@@ -1699,6 +1705,10 @@ async function checkFeiNiuStatus() {
             if (statSession) {
                 statSession.textContent = '未连接';
                 statSession.style.color = 'var(--text-muted)';
+            }
+            const serverInput = document.getElementById('fn-server-url');
+            if (serverInput && !serverInput.value) {
+                serverInput.value = data.server_url || 'http://172.17.0.1:5666';
             }
         }
     } catch (e) {

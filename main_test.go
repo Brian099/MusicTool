@@ -271,7 +271,7 @@ func TestFeiNiuDatabaseAndServerAPI(t *testing.T) {
 	now := int64(1700000000)
 	err = db.SaveFeiNiuConfig(ctx, &database.FeiNiuConfigRecord{
 		ID:           1,
-		ServerURL:    "http://192.168.1.100:8000",
+		ServerURL:    "http://172.17.0.1:5666",
 		Username:     "admin",
 		PasswordHash: "mock-hash",
 		DeviceID:     "dev-123",
