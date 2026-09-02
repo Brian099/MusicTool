@@ -2299,9 +2299,49 @@ function initFeiNiuImportModal() {
     }
 }
 
+// ==================== 侧边栏折叠与展开功能 ====================
+
+function initSidebarCollapse() {
+    let isCollapsed = localStorage.getItem('music_toolkit_sidebar_collapsed') === 'true';
+
+    const updateUI = (collapsed) => {
+        document.querySelectorAll('.grid-layout').forEach(layout => {
+            if (collapsed) {
+                layout.classList.add('sidebar-collapsed');
+            } else {
+                layout.classList.remove('sidebar-collapsed');
+            }
+        });
+        localStorage.setItem('music_toolkit_sidebar_collapsed', collapsed ? 'true' : 'false');
+    };
+
+    if (isCollapsed) {
+        updateUI(true);
+    }
+
+    // 绑定右上角折叠按钮 (上三角+三横线)
+    document.querySelectorAll('.btn-sidebar-toggle').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isCollapsed = true;
+            updateUI(true);
+        });
+    });
+
+    // 绑定折叠后左侧浮动的展开面板按钮
+    document.querySelectorAll('.sidebar-expand-trigger').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            isCollapsed = false;
+            updateUI(false);
+        });
+    });
+}
+
 // 页面加载启动
 document.addEventListener('DOMContentLoaded', () => {
     initThemeToggle();
+    initSidebarCollapse();
     initActionModalEvents();
     initDirStatsWatchers();
     fetchSystemStatus();

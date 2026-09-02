@@ -86,11 +86,32 @@
             <!-- TAB 1: 格式一致性检查器 -->
             <section id="tab-format" class="tab-content active">
                 <div class="grid-layout">
+                    <!-- 折叠后展开按钮 -->
+                    <button type="button" class="sidebar-expand-trigger" title="展开控制栏">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                            <path d="M12 21L18 15H6z"/>
+                            <rect x="5" y="10.7" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="7.2" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="3.7" width="14" height="1.8" rx="0.9"/>
+                        </svg>
+                        <span>展开面板</span>
+                    </button>
+
                     <!-- 控制侧边栏 -->
                     <div class="control-panel glass-panel">
                         <div class="panel-header">
-                            <h2>格式一致性检测</h2>
-                            <p class="subtitle">全面检测真实音频格式与后缀不一致、下载损坏或防盗链网页伪装文件</p>
+                            <div class="panel-title-wrap">
+                                <h2>格式一致性检测</h2>
+                                <p class="subtitle">全面检测真实音频格式与后缀不一致、下载损坏或防盗链网页伪装文件</p>
+                            </div>
+                            <button type="button" class="btn-sidebar-toggle" title="折叠控制栏">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                    <path d="M12 3L6 9h12z"/>
+                                    <rect x="5" y="11.5" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="15" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="18.5" width="14" height="1.8" rx="0.9"/>
+                                </svg>
+                            </button>
                         </div>
 
                         <form id="form-format-scan" class="config-form">
@@ -238,11 +259,32 @@
             <!-- TAB 2: 音频指纹去重器 (Songloft 引擎) -->
             <section id="tab-dedup" class="tab-content">
                 <div class="grid-layout">
+                    <!-- 折叠后展开按钮 -->
+                    <button type="button" class="sidebar-expand-trigger" title="展开控制栏">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                            <path d="M12 21L18 15H6z"/>
+                            <rect x="5" y="10.7" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="7.2" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="3.7" width="14" height="1.8" rx="0.9"/>
+                        </svg>
+                        <span>展开面板</span>
+                    </button>
+
                     <!-- 控制侧边栏 -->
                     <div class="control-panel glass-panel">
                         <div class="panel-header">
-                            <h2>声学指纹去重</h2>
-                            <p class="subtitle">Songloft 核心 AcoustID 算法 + 30s 时长容差精准聚类</p>
+                            <div class="panel-title-wrap">
+                                <h2>声学指纹去重</h2>
+                                <p class="subtitle">Songloft 核心 AcoustID 算法 + 30s 时长容差精准聚类</p>
+                            </div>
+                            <button type="button" class="btn-sidebar-toggle" title="折叠控制栏">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                    <path d="M12 3L6 9h12z"/>
+                                    <rect x="5" y="11.5" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="15" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="18.5" width="14" height="1.8" rx="0.9"/>
+                                </svg>
+                            </button>
                         </div>
 
                         <div class="config-form">
@@ -383,11 +425,32 @@
             <!-- TAB 3: 真假无损鉴别 (FLAC/APE 频谱分析) -->
             <section id="tab-lossless" class="tab-content">
                 <div class="grid-layout">
+                    <!-- 折叠后展开按钮 -->
+                    <button type="button" class="sidebar-expand-trigger" title="展开控制栏">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                            <path d="M12 21L18 15H6z"/>
+                            <rect x="5" y="10.7" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="7.2" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="3.7" width="14" height="1.8" rx="0.9"/>
+                        </svg>
+                        <span>展开面板</span>
+                    </button>
+
                     <!-- 控制侧边栏 -->
                     <div class="control-panel glass-panel">
                         <div class="panel-header">
-                            <h2>真假无损鉴别</h2>
-                            <p class="subtitle">基于高频截止频率 (16k/20k 刀切线) 与泛音能量分析判定真假无损</p>
+                            <div class="panel-title-wrap">
+                                <h2>真假无损鉴别</h2>
+                                <p class="subtitle">基于高频截止频率 (16k/20k 刀切线) 与泛音能量分析判定真假无损</p>
+                            </div>
+                            <button type="button" class="btn-sidebar-toggle" title="折叠控制栏">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                    <path d="M12 3L6 9h12z"/>
+                                    <rect x="5" y="11.5" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="15" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="18.5" width="14" height="1.8" rx="0.9"/>
+                                </svg>
+                            </button>
                         </div>
 
                         <form id="form-lossless-scan" class="config-form">
@@ -525,11 +588,32 @@
             <!-- TAB 4: 歌单文本提取器 (网易云/QQ/汽水音乐) -->
             <section id="tab-playlist" class="tab-content">
                 <div class="grid-layout">
+                    <!-- 折叠后展开按钮 -->
+                    <button type="button" class="sidebar-expand-trigger" title="展开控制栏">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                            <path d="M12 21L18 15H6z"/>
+                            <rect x="5" y="10.7" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="7.2" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="3.7" width="14" height="1.8" rx="0.9"/>
+                        </svg>
+                        <span>展开面板</span>
+                    </button>
+
                     <!-- 控制侧边栏 -->
                     <div class="control-panel glass-panel">
                         <div class="panel-header">
-                            <h2>歌单文本提取</h2>
-                            <p class="subtitle">支持网易云音乐、QQ音乐、汽水音乐一键解析并生成标准歌单文本</p>
+                            <div class="panel-title-wrap">
+                                <h2>歌单文本提取</h2>
+                                <p class="subtitle">支持网易云音乐、QQ音乐、汽水音乐一键解析并生成标准歌单文本</p>
+                            </div>
+                            <button type="button" class="btn-sidebar-toggle" title="折叠控制栏">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                    <path d="M12 3L6 9h12z"/>
+                                    <rect x="5" y="11.5" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="15" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="18.5" width="14" height="1.8" rx="0.9"/>
+                                </svg>
+                            </button>
                         </div>
 
                         <form id="form-playlist-parse" class="config-form">
@@ -723,11 +807,32 @@
             <!-- TAB 5: 飞牛音乐歌单管理器 (FnOS Music) -->
             <section id="tab-feiniu" class="tab-content">
                 <div class="grid-layout">
+                    <!-- 折叠后展开按钮 -->
+                    <button type="button" class="sidebar-expand-trigger" title="展开控制栏">
+                        <svg viewBox="0 0 24 24" width="15" height="15" fill="currentColor">
+                            <path d="M12 21L18 15H6z"/>
+                            <rect x="5" y="10.7" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="7.2" width="14" height="1.8" rx="0.9"/>
+                            <rect x="5" y="3.7" width="14" height="1.8" rx="0.9"/>
+                        </svg>
+                        <span>展开面板</span>
+                    </button>
+
                     <!-- 控制侧边栏 -->
                     <div class="control-panel glass-panel">
                         <div class="panel-header">
-                            <h2>飞牛音乐管理</h2>
-                            <p class="subtitle">直连飞牛 FnOS 原生音乐服务，管理 NAS 歌单与自动匹配入库</p>
+                            <div class="panel-title-wrap">
+                                <h2>飞牛音乐管理</h2>
+                                <p class="subtitle">直连飞牛 FnOS 原生音乐服务，管理 NAS 歌单与自动匹配入库</p>
+                            </div>
+                            <button type="button" class="btn-sidebar-toggle" title="折叠控制栏">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
+                                    <path d="M12 3L6 9h12z"/>
+                                    <rect x="5" y="11.5" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="15" width="14" height="1.8" rx="0.9"/>
+                                    <rect x="5" y="18.5" width="14" height="1.8" rx="0.9"/>
+                                </svg>
+                            </button>
                         </div>
 
                         <!-- 飞牛 NAS 连接配置 -->

@@ -353,17 +353,40 @@ body.dark-theme .badge-accent {
     grid-template-columns: 340px 1fr;
     gap: 20px;
     align-items: start;
+    position: relative;
+    transition: grid-template-columns 0.25s cubic-bezier(0.4, 0, 0.2, 1), gap 0.25s ease;
+}
+
+/* 侧边栏折叠状态 */
+.grid-layout.sidebar-collapsed {
+    grid-template-columns: 1fr;
+    gap: 0;
+}
+
+.grid-layout.sidebar-collapsed .control-panel {
+    display: none !important;
 }
 
 /* 左侧控制栏 */
 .control-panel {
     padding: 18px 20px;
+    position: relative;
+    transition: all 0.25s ease;
 }
 
 .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 10px;
     margin-bottom: 16px;
     padding-bottom: 12px;
     border-bottom: 1px solid var(--border-subtle);
+}
+
+.panel-title-wrap {
+    flex: 1;
+    min-width: 0;
 }
 
 .panel-header h2 {
@@ -379,11 +402,81 @@ body.dark-theme .badge-accent {
     line-height: 1.4;
 }
 
+/* 侧边栏右上角折叠按钮 (上三角+三横线) */
+.btn-sidebar-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    color: var(--text-muted);
+    cursor: pointer;
+    flex-shrink: 0;
+    padding: 0;
+    transition: background-color 0.15s, color 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.btn-sidebar-toggle:hover {
+    background: var(--bg-subtle);
+    color: var(--text-main);
+    border-color: var(--border-strong);
+    transform: translateY(-1px);
+}
+
+.btn-sidebar-toggle:active {
+    transform: translateY(0);
+}
+
+.btn-sidebar-toggle svg {
+    display: block;
+}
+
+/* 折叠后左侧浮动的展开面板触发按钮 */
+.sidebar-expand-trigger {
+    display: none;
+}
+
+.grid-layout.sidebar-collapsed .sidebar-expand-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    position: sticky;
+    top: 20px;
+    margin-bottom: 12px;
+    align-self: flex-start;
+    padding: 6px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-full);
+    color: var(--text-main);
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: var(--shadow-sm);
+    z-index: 20;
+    transition: background-color 0.15s, border-color 0.15s, transform 0.15s;
+}
+
+.grid-layout.sidebar-collapsed .sidebar-expand-trigger:hover {
+    background: var(--primary);
+    color: #ffffff;
+    border-color: var(--primary);
+    transform: translateX(3px);
+}
+
+.grid-layout.sidebar-collapsed .sidebar-expand-trigger svg {
+    display: block;
+}
+
 /* 右侧内容展示区 */
 .display-panel {
     display: flex;
     flex-direction: column;
     gap: 16px;
+    min-width: 0;
 }
 
 /* -------------------- 表单与控件系统 -------------------- */
