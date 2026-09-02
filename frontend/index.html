@@ -10,11 +10,6 @@
     <link rel="stylesheet" href="/static/style.css">
 </head>
 <body class="light-theme">
-    <!-- 动态背景光晕 -->
-    <div class="glow-bg glow-1"></div>
-    <div class="glow-bg glow-2"></div>
-    <div class="glow-bg glow-3"></div>
-
     <div class="app-container">
         <!-- 顶部导航栏 -->
         <header class="app-header glass-panel">
@@ -647,7 +642,7 @@
                                         <button id="btn-pl-copy-all" class="btn btn-primary btn-sm" title="一键复制纯文本歌曲列表，方便直接粘贴迁移">
                                             📋 复制纯文本
                                         </button>
-                                        <button id="btn-pl-import-feiniu" class="btn btn-accent btn-sm" title="将提取结果一键导入并匹配到飞牛 NAS 歌单" style="background: linear-gradient(135deg, #10b981, #059669); color: #fff; font-weight: 500;">
+                                        <button id="btn-pl-import-feiniu" class="btn btn-success btn-sm" title="将提取结果一键导入并匹配到飞牛 NAS 歌单">
                                             🐂 导入到飞牛歌单
                                         </button>
                                         <button id="btn-pl-export-txt" class="btn btn-secondary btn-sm" title="导出为 .txt 文件">
@@ -998,22 +993,22 @@
                         <span class="progress-percent" id="fn-import-progress-pct">匹配中...</span>
                     </div>
                     <div class="progress-bar-bg" style="margin-top: 8px;">
-                        <div class="progress-bar-fill" style="width: 100%; animation: pulse-glow 1.5s infinite; background: linear-gradient(90deg, #10b981, #059669);"></div>
+                        <div class="progress-bar-fill" style="width: 100%;"></div>
                     </div>
                 </div>
 
                 <!-- 导入完成结果报告区 -->
                 <div id="fn-import-result-area" class="hidden" style="margin-top: 15px;">
                     <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr); margin-bottom: 12px;">
-                        <div class="stat-card glass-panel" style="padding: 10px;">
+                        <div class="stat-card" style="padding: 10px;">
                             <span class="stat-label">提取总数</span>
                             <span class="stat-value" id="fn-rep-total" style="font-size: 18px;">0</span>
                         </div>
-                        <div class="stat-card glass-panel" style="padding: 10px;">
-                            <span class="stat-label" style="color: #10b981;">匹配入库</span>
-                            <span class="stat-value" id="fn-rep-matched" style="font-size: 18px; color: #10b981;">0</span>
+                        <div class="stat-card" style="padding: 10px;">
+                            <span class="stat-label" style="color: var(--color-success);">匹配入库</span>
+                            <span class="stat-value" id="fn-rep-matched" style="font-size: 18px; color: var(--color-success);">0</span>
                         </div>
-                        <div class="stat-card glass-panel" style="padding: 10px;">
+                        <div class="stat-card" style="padding: 10px;">
                             <span class="stat-label" style="color: var(--color-danger);">未找到</span>
                             <span class="stat-value" id="fn-rep-unmatched" style="font-size: 18px; color: var(--color-danger);">0</span>
                         </div>
@@ -1030,7 +1025,7 @@
             </div>
             <div class="modal-footer">
                 <button id="btn-fn-import-cancel" class="btn btn-secondary btn-sm">取消</button>
-                <button id="btn-fn-import-confirm" class="btn btn-primary btn-sm" style="background: linear-gradient(135deg, #10b981, #059669);">🚀 开始匹配并导入</button>
+                <button id="btn-fn-import-confirm" class="btn btn-primary btn-sm">🚀 开始匹配并导入</button>
             </div>
         </div>
     </div>

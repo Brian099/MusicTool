@@ -1251,17 +1251,17 @@ function renderLosslessTable() {
         let cutoffStyle = 'color: var(--color-success); font-weight: 700;';
 
         if (r.grade === 'true_hires') {
-            gradeBadge = '<span class="tag-lossless" style="background: linear-gradient(135deg, #ec4899, #8b5cf6);">🏆 真 Hi-Res</span>';
+            gradeBadge = '<span class="badge tag-quality-lossless">🏆 真 Hi-Res</span>';
         } else if (r.grade === 'true_lossless') {
-            gradeBadge = '<span class="tag-lossless">💎 真无损 (CD)</span>';
+            gradeBadge = '<span class="badge tag-quality-lossless">💎 真无损 (CD)</span>';
         } else if (r.grade === 'fake_320k') {
-            gradeBadge = '<span class="badge-fmt" style="background: rgba(245, 158, 11, 0.15); color: #d97706; border: 1px solid rgba(245, 158, 11, 0.35);">⚠️ 假无损 (320k)</span>';
-            cutoffStyle = 'color: #d97706; font-weight: 700;';
+            gradeBadge = '<span class="badge tag-quality-fake">⚠️ 假无损 (320k)</span>';
+            cutoffStyle = 'color: var(--color-warning); font-weight: 700;';
         } else if (r.grade === 'fake_low_bitrate') {
-            gradeBadge = '<span class="badge-fmt" style="background: rgba(239, 68, 68, 0.15); color: #dc2626; border: 1px solid rgba(239, 68, 68, 0.35);">🚫 劣质假无损 (128k)</span>';
-            cutoffStyle = 'color: #dc2626; font-weight: 700;';
+            gradeBadge = '<span class="badge tag-quality-low">🚫 劣质假无损 (128k)</span>';
+            cutoffStyle = 'color: var(--color-danger); font-weight: 700;';
         } else {
-            gradeBadge = '<span class="badge-fmt">未知</span>';
+            gradeBadge = '<span class="badge">未知</span>';
             cutoffStyle = 'color: var(--text-sub);';
         }
 
