@@ -1086,7 +1086,7 @@ function initThemeToggle() {
     const btn = document.getElementById('btn-toggle-theme');
     if (!btn) return;
 
-    const savedTheme = localStorage.getItem('music_toolkit_theme') || 'light';
+    const savedTheme = localStorage.getItem('music_toolkit_theme') || 'dark';
     applyTheme(savedTheme);
 
     btn.addEventListener('click', () => {

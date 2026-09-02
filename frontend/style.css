@@ -3,76 +3,10 @@
    ========================================================================== */
 
 /* -------------------- 设计变量规范 (Design Tokens) -------------------- */
+/* 默认：深色主题 (Dark Mode Default) */
 :root,
-body.light-theme {
-    /* 页面背景与实体卡片 */
-    --bg-page: #f8fafc;
-    --bg-card: #ffffff;
-    --bg-card-hover: #fcfdfe;
-    --bg-subtle: #f1f5f9;
-    --bg-input: #ffffff;
-    --bg-table-head: #f8fafc;
-    --bg-table-hover: #f8fafc;
-    --bg-modal-overlay: rgba(15, 23, 42, 0.45);
-
-    /* 边框与分割线 */
-    --border-subtle: #e2e8f0;
-    --border-default: #cbd5e1;
-    --border-strong: #94a3b8;
-    --border-focus: #2563eb;
-
-    /* 文本色系 */
-    --text-main: #0f172a;
-    --text-muted: #475569;
-    --text-sub: #64748b;
-    --text-inverse: #ffffff;
-
-    /* 品牌主色 (工业纯蓝，克制专业) */
-    --primary: #2563eb;
-    --primary-hover: #1d4ed8;
-    --primary-active: #1e40af;
-    --primary-subtle: #eff6ff;
-    --primary-text: #1d4ed8;
-
-    /* 功能反馈色 (标准纯色) */
-    --color-success: #16a34a;
-    --color-success-subtle: #f0fdf4;
-    --color-success-border: #bbf7d0;
-
-    --color-warning: #d97706;
-    --color-warning-subtle: #fffbeb;
-    --color-warning-border: #fde68a;
-
-    --color-danger: #dc2626;
-    --color-danger-subtle: #fef2f2;
-    --color-danger-border: #fecaca;
-
-    --color-info: #2563eb;
-    --color-info-subtle: #eff6ff;
-    --color-info-border: #bfdbfe;
-
-    /* 辅助色与兼容兼容 */
-    --accent-primary: #2563eb;
-    --accent-secondary: #0284c7;
-
-    /* 几何与投影 */
-    --radius-sm: 6px;
-    --radius-md: 8px;
-    --radius-lg: 10px;
-    --radius-full: 9999px;
-
-    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
-    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
-    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
-    --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-
-    /* 字体 */
-    --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-}
-
-/* 暗色模式规范 (Clean Dark Slate) */
 body.dark-theme {
+    /* 页面背景与实体卡片 */
     --bg-page: #0f172a;
     --bg-card: #1e293b;
     --bg-card-hover: #243248;
@@ -82,22 +16,26 @@ body.dark-theme {
     --bg-table-hover: #243248;
     --bg-modal-overlay: rgba(0, 0, 0, 0.7);
 
+    /* 边框与分割线 */
     --border-subtle: #334155;
     --border-default: #475569;
     --border-strong: #64748b;
     --border-focus: #3b82f6;
 
+    /* 文本色系 */
     --text-main: #f8fafc;
     --text-muted: #cbd5e1;
     --text-sub: #94a3b8;
     --text-inverse: #0f172a;
 
+    /* 品牌主色 */
     --primary: #3b82f6;
     --primary-hover: #2563eb;
     --primary-active: #1d4ed8;
     --primary-subtle: rgba(59, 130, 246, 0.12);
     --primary-text: #60a5fa;
 
+    /* 功能反馈色 */
     --color-success: #22c55e;
     --color-success-subtle: rgba(34, 197, 94, 0.12);
     --color-success-border: rgba(34, 197, 94, 0.3);
@@ -117,10 +55,76 @@ body.dark-theme {
     --accent-primary: #3b82f6;
     --accent-secondary: #38bdf8;
 
+    /* 几何与投影 */
+    --radius-sm: 6px;
+    --radius-md: 8px;
+    --radius-lg: 10px;
+    --radius-full: 9999px;
+
     --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.3);
     --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.4);
     --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.5);
     --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.6);
+
+    /* 控件统一高度尺寸 */
+    --control-h-base: 36px;
+    --control-h-sm: 30px;
+
+    /* 字体 */
+    --font-main: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+/* 亮色主题 (Light Mode 支持) */
+body.light-theme {
+    --bg-page: #f8fafc;
+    --bg-card: #ffffff;
+    --bg-card-hover: #fcfdfe;
+    --bg-subtle: #f1f5f9;
+    --bg-input: #ffffff;
+    --bg-table-head: #f8fafc;
+    --bg-table-hover: #f8fafc;
+    --bg-modal-overlay: rgba(15, 23, 42, 0.45);
+
+    --border-subtle: #e2e8f0;
+    --border-default: #cbd5e1;
+    --border-strong: #94a3b8;
+    --border-focus: #2563eb;
+
+    --text-main: #0f172a;
+    --text-muted: #475569;
+    --text-sub: #64748b;
+    --text-inverse: #ffffff;
+
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --primary-active: #1e40af;
+    --primary-subtle: #eff6ff;
+    --primary-text: #1d4ed8;
+
+    --color-success: #16a34a;
+    --color-success-subtle: #f0fdf4;
+    --color-success-border: #bbf7d0;
+
+    --color-warning: #d97706;
+    --color-warning-subtle: #fffbeb;
+    --color-warning-border: #fde68a;
+
+    --color-danger: #dc2626;
+    --color-danger-subtle: #fef2f2;
+    --color-danger-border: #fecaca;
+
+    --color-info: #2563eb;
+    --color-info-subtle: #eff6ff;
+    --color-info-border: #bfdbfe;
+
+    --accent-primary: #2563eb;
+    --accent-secondary: #0284c7;
+
+    --shadow-xs: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    --shadow-sm: 0 1px 3px 0 rgba(0, 0, 0, 0.08), 0 1px 2px -1px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.08), 0 2px 4px -2px rgba(0, 0, 0, 0.04);
+    --shadow-modal: 0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
 }
 
 /* -------------------- 基础重置与通用结构 -------------------- */
@@ -415,16 +419,36 @@ body.dark-theme .badge-accent {
 }
 
 .input-text,
-.select-input,
-textarea.input-text {
+.select-input {
     width: 100%;
-    padding: 7px 10px;
+    height: var(--control-h-base);
+    padding: 0 10px;
     background: var(--bg-input);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     color: var(--text-main);
-    font-size: 12px;
+    font-size: 13px;
     font-family: inherit;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+textarea.input-text {
+    width: 100%;
+    height: auto;
+    min-height: 72px;
+    padding: 8px 10px;
+    background: var(--bg-input);
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    font-size: 13px;
+    font-family: inherit;
+    line-height: 1.5;
+    box-sizing: border-box;
+    resize: vertical;
     transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
@@ -438,26 +462,38 @@ textarea.input-text:focus {
 
 .input-with-action {
     display: flex;
-    align-items: center;
+    align-items: stretch;
     gap: 6px;
+    width: 100%;
 }
 
 .input-with-action .input-text {
     flex: 1;
+    height: var(--control-h-base);
+}
+
+.input-with-action .btn,
+.input-with-action .btn-sm {
+    height: var(--control-h-base);
+    padding: 0 14px;
+    font-size: 13px;
 }
 
 .btn-input-refresh {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: var(--control-h-base);
+    height: var(--control-h-base);
+    min-width: var(--control-h-base);
+    padding: 0;
     background: var(--bg-card);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     cursor: pointer;
-    font-size: 13px;
+    font-size: 14px;
     color: var(--text-muted);
+    box-sizing: border-box;
     transition: background-color 0.15s;
 }
 
@@ -506,16 +542,19 @@ textarea.input-text:focus {
     align-items: center;
     justify-content: center;
     gap: 6px;
-    padding: 8px 16px;
+    height: var(--control-h-base);
+    padding: 0 16px;
     border-radius: var(--radius-sm);
     font-size: 13px;
     font-weight: 500;
     font-family: inherit;
     cursor: pointer;
     border: 1px solid transparent;
+    box-sizing: border-box;
     transition: background-color 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
     text-decoration: none;
-    line-height: 1.2;
+    line-height: 1;
+    white-space: nowrap;
 }
 
 .btn svg {
@@ -592,7 +631,8 @@ textarea.input-text:focus {
 }
 
 .btn-sm {
-    padding: 5px 10px;
+    height: var(--control-h-sm);
+    padding: 0 10px;
     font-size: 12px;
 }
 
@@ -600,14 +640,15 @@ textarea.input-text:focus {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 28px;
-    height: 28px;
+    width: var(--control-h-sm);
+    height: var(--control-h-sm);
     border-radius: var(--radius-sm);
     background: transparent;
     border: 1px solid transparent;
     color: var(--text-muted);
     cursor: pointer;
     font-size: 14px;
+    box-sizing: border-box;
     transition: background-color 0.15s;
 }
 
@@ -632,12 +673,14 @@ textarea.input-text:focus {
 .btn-group-row,
 .btn-row {
     display: flex;
+    align-items: stretch;
     gap: 8px;
-    align-items: center;
+    width: 100%;
 }
 
+.btn-group-row .btn,
 .btn-row .btn {
-    flex: 1;
+    height: var(--control-h-base);
 }
 
 /* -------------------- 提示说明盒 (Smart Clean Box) -------------------- */
@@ -813,21 +856,50 @@ textarea.input-text:focus {
     flex-wrap: wrap;
 }
 
-.input-search {
-    padding: 5px 10px;
+.table-actions .input-search,
+.table-actions .select-input {
+    height: var(--control-h-sm);
+    padding: 0 10px;
     background: var(--bg-input);
     border: 1px solid var(--border-default);
     border-radius: var(--radius-sm);
     color: var(--text-main);
     font-size: 12px;
     font-family: inherit;
+    box-sizing: border-box;
+    display: inline-flex;
+    align-items: center;
+}
+
+.input-search {
     width: 180px;
 }
 
-.input-search:focus {
+.table-actions .input-search:focus,
+.table-actions .select-input:focus {
     outline: none;
     border-color: var(--primary);
     box-shadow: 0 0 0 2px var(--primary-subtle);
+}
+
+.table-actions .btn,
+.table-actions .btn-sm {
+    height: var(--control-h-sm);
+    padding: 0 10px;
+    font-size: 12px;
+    box-sizing: border-box;
+}
+
+.table-actions .btn-group-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.table-actions .btn-group-actions .btn {
+    height: var(--control-h-sm);
+    padding: 0 10px;
+    font-size: 12px;
 }
 
 .table-container {
@@ -1332,6 +1404,14 @@ textarea.input-text:focus {
     padding: 12px 18px;
     background: var(--bg-subtle);
     border-top: 1px solid var(--border-subtle);
+}
+
+.modal-footer .btn,
+.modal-footer .btn-sm {
+    height: var(--control-h-sm);
+    padding: 0 14px;
+    font-size: 12px;
+    box-sizing: border-box;
 }
 
 /* -------------------- 全局音频播放条 -------------------- */

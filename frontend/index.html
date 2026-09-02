@@ -9,7 +9,7 @@
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/style.css">
 </head>
-<body class="light-theme">
+<body class="dark-theme">
     <div class="app-container">
         <!-- 顶部导航栏 -->
         <header class="app-header glass-panel">
@@ -52,26 +52,26 @@
                 <nav class="nav-tabs">
                     <button class="nav-tab active" data-tab="tab-format">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                        <span>格式一致性修复</span>
+                        <span>格式检查</span>
                     </button>
                     <button class="nav-tab" data-tab="tab-dedup">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-                        <span>音频指纹去重</span>
+                        <span>音频去重</span>
                         <span class="badge-accent">Songloft 引擎</span>
                     </button>
                     <button class="nav-tab" data-tab="tab-lossless">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
-                        <span>真假无损鉴别</span>
+                        <span>真假无损</span>
                         <span class="badge-accent">FLAC/APE</span>
                     </button>
                     <button class="nav-tab" data-tab="tab-playlist">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle><line x1="3" y1="6" x2="6" y2="6"></line><line x1="3" y1="10" x2="6" y2="10"></line></svg>
-                        <span>歌单文本提取</span>
+                        <span>歌单获取</span>
                         <span class="badge-accent">网易/QQ/汽水</span>
                     </button>
                     <button class="nav-tab" data-tab="tab-feiniu">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
-                        <span>飞牛歌单</span>
+                        <span>飞牛音乐</span>
                         <span class="badge-accent">FnOS NAS</span>
                     </button>
                 </nav>
@@ -760,7 +760,7 @@
                                     <button type="submit" id="btn-fn-connect" class="btn btn-primary" style="flex: 1;">
                                         ⚡ 连接 / 重新登录
                                     </button>
-                                    <button type="button" id="btn-fn-disconnect" class="btn btn-secondary btn-sm" title="断开连接并清除凭据">
+                                    <button type="button" id="btn-fn-disconnect" class="btn btn-secondary" title="断开连接并清除凭据">
                                         断开
                                     </button>
                                 </div>
@@ -775,7 +775,7 @@
                                 <label for="fn-new-pl-name">➕ 新建飞牛歌单</label>
                                 <div class="input-with-action">
                                     <input type="text" id="fn-new-pl-name" class="input-text" placeholder="输入新歌单名称..." required>
-                                    <button type="submit" class="btn btn-primary btn-sm" id="btn-fn-create-pl">创建</button>
+                                    <button type="submit" class="btn btn-primary" id="btn-fn-create-pl">创建</button>
                                 </div>
                             </div>
                         </form>
