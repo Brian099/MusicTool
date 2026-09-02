@@ -39,7 +39,7 @@
                 </div>
                 <div class="chip" id="chip-music-dir" title="音乐库挂载状态">
                     <span class="dot"></span>
-                    <span class="label" id="music-dir-label">/music</span>
+                    <span class="label" id="music-dir-label">未挂载</span>
                 </div>
                 <div class="chip" id="chip-feiniu" title="飞牛 NAS 音乐连接状态">
                     <span class="dot"></span>
@@ -116,9 +116,16 @@
 
                         <form id="form-format-scan" class="config-form">
                             <div class="form-group">
-                                <label for="fmt-music-dir">待扫描音乐目录</label>
-                                <div class="input-with-action">
-                                    <input type="text" id="fmt-music-dir" class="input-text" placeholder="/music">
+                                <div class="form-label-row">
+                                    <label for="fmt-music-dir">待扫描音乐目录</label>
+                                    <span class="label-badge-tip">支持多目录与单目录</span>
+                                </div>
+                                <select id="fmt-dir-select" class="select-input dir-quick-select" title="快速选择已挂载的音乐库">
+                                    <option value="__ALL__">🌐 全部音乐库 (合并扫描)</option>
+                                    <option value="__CUSTOM__">✏️ 自定义路径 / 手动输入...</option>
+                                </select>
+                                <div class="input-with-action" style="margin-top: 6px;">
+                                    <input type="text" id="fmt-music-dir" class="input-text" placeholder="例如：/music 或 /vol1/1000/music">
                                     <button type="button" class="btn-input-refresh" id="btn-refresh-fmt-dir" title="重新查询该目录音乐数量">🔄</button>
                                 </div>
                                 <div class="dir-stats-badge" id="fmt-dir-stats">
@@ -289,9 +296,16 @@
 
                         <div class="config-form">
                             <div class="form-group">
-                                <label for="dedup-music-dir">扫描音乐目录</label>
-                                <div class="input-with-action">
-                                    <input type="text" id="dedup-music-dir" class="input-text" placeholder="/music">
+                                <div class="form-label-row">
+                                    <label for="dedup-music-dir">待扫描音乐目录</label>
+                                    <span class="label-badge-tip">支持多目录与单目录</span>
+                                </div>
+                                <select id="dedup-dir-select" class="select-input dir-quick-select" title="快速选择已挂载的音乐库">
+                                    <option value="__ALL__">🌐 全部音乐库 (合并扫描)</option>
+                                    <option value="__CUSTOM__">✏️ 自定义路径 / 手动输入...</option>
+                                </select>
+                                <div class="input-with-action" style="margin-top: 6px;">
+                                    <input type="text" id="dedup-music-dir" class="input-text" placeholder="例如：/music 或 /vol1/1000/music">
                                     <button type="button" class="btn-input-refresh" id="btn-refresh-dedup-dir" title="重新查询该目录音乐数量">🔄</button>
                                 </div>
                                 <div class="dir-stats-badge" id="dedup-dir-stats">
@@ -455,9 +469,16 @@
 
                         <form id="form-lossless-scan" class="config-form">
                             <div class="form-group">
-                                 <label for="lossless-music-dir">待检测目录</label>
-                                 <div class="input-with-action">
-                                     <input type="text" id="lossless-music-dir" class="input-text" placeholder="/music">
+                                 <div class="form-label-row">
+                                     <label for="lossless-music-dir">待检测目录</label>
+                                     <span class="label-badge-tip">支持多目录与单目录</span>
+                                 </div>
+                                 <select id="lossless-dir-select" class="select-input dir-quick-select" title="快速选择已挂载的音乐库">
+                                     <option value="__ALL__">🌐 全部音乐库 (合并扫描)</option>
+                                     <option value="__CUSTOM__">✏️ 自定义路径 / 手动输入...</option>
+                                 </select>
+                                 <div class="input-with-action" style="margin-top: 6px;">
+                                     <input type="text" id="lossless-music-dir" class="input-text" placeholder="例如：/music 或 /vol1/1000/music">
                                      <button type="button" class="btn-input-refresh" id="btn-refresh-lossless-dir" title="重新查询该目录音乐数量">🔄</button>
                                  </div>
                                  <div class="dir-stats-badge" id="lossless-dir-stats">

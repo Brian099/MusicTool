@@ -247,31 +247,28 @@ async function fetchSystemStatus() {
 
         const musicLabel = document.getElementById('music-dir-label');
         const musicChip = document.getElementById('chip-music-dir');
-        if (data.music_stats && data.music_stats.exists) {
-            musicLabel.textContent = `${data.music_dir || '/music'} (${data.music_stats.total_files} 首)`;
+        
+        const dirs = data.music_dirs || [];
+        const validDirs = dirs.filter(d => d.exists);
+        const totalStats = data.total_music_stats || data.music_stats || { total_files: 0, total_size: 0, exists: false };
+
+        if (validDirs.length > 0) {
+            musicLabel.textContent = `已挂载 ${validDirs.length} 个目录`;
+            musicChip.classList.add('active');
+            const dirDetails = validDirs.map(d => `• ${d.path} (${d.total_files} 首, ${formatBytes(d.total_size)})`).join('\n');
+            musicChip.title = `已挂载 ${validDirs.length} 个音乐目录 (共 ${totalStats.total_files} 首音频，占用 ${formatBytes(totalStats.total_size)}):\n${dirDetails}`;
+        } else if (data.music_stats && data.music_stats.exists) {
+            musicLabel.textContent = `已挂载 1 个目录`;
             musicChip.classList.add('active');
             musicChip.title = `挂载音乐库: ${data.music_dir} (共 ${data.music_stats.total_files} 首音频，占用 ${formatBytes(data.music_stats.total_size)})`;
         } else {
-            musicLabel.textContent = data.music_dir || '/music';
-            if (data.music_dir_exists) musicChip.classList.add('active');
+            musicLabel.textContent = '未挂载';
+            musicChip.classList.remove('active');
+            musicChip.title = '未检测到有效的音乐目录，请在设置中授权或检查挂载路径';
         }
 
-        // 设置默认输入框并触发目录统计
-        const defaultDir = data.music_dir || '';
-        if (!document.getElementById('fmt-music-dir').value) {
-            document.getElementById('fmt-music-dir').value = defaultDir;
-        }
-        if (!document.getElementById('dedup-music-dir').value) {
-            document.getElementById('dedup-music-dir').value = defaultDir;
-        }
-        if (!document.getElementById('lossless-music-dir').value) {
-            document.getElementById('lossless-music-dir').value = defaultDir;
-        }
-
-        // 查询各输入框当前目录文件统计
-        queryDirStats(document.getElementById('fmt-music-dir').value, 'fmt-dir-stats');
-        queryDirStats(document.getElementById('dedup-music-dir').value, 'dedup-dir-stats');
-        queryDirStats(document.getElementById('lossless-music-dir').value, 'lossless-dir-stats');
+        // 初始化/填充 3 个面板的下拉选择器
+        setupDirectorySelects(data);
 
         // 检查是否有正在运行的任务
         if (data.tasks.format_scan && data.tasks.format_scan.status === 'running') {
@@ -285,6 +282,170 @@ async function fetchSystemStatus() {
         }
     } catch (e) {
         console.error('获取系统状态失败:', e);
+    }
+}
+
+// 统一配置与联动多目录下拉框
+function setupDirectorySelects(systemData) {
+    const panels = [
+        { selectId: 'fmt-dir-select', inputId: 'fmt-music-dir', statsId: 'fmt-dir-stats', refreshId: 'btn-refresh-fmt-dir' },
+        { selectId: 'dedup-dir-select', inputId: 'dedup-music-dir', statsId: 'dedup-dir-stats', refreshId: 'btn-refresh-dedup-dir' },
+        { selectId: 'lossless-dir-select', inputId: 'lossless-music-dir', statsId: 'lossless-dir-stats', refreshId: 'btn-refresh-lossless-dir' }
+    ];
+
+    const dirs = systemData.music_dirs || [];
+    const totalStats = systemData.total_music_stats || systemData.music_stats || { total_files: 0, total_size: 0 };
+    const defaultDir = (dirs.length > 0 ? dirs[0].path : systemData.music_dir) || '/music';
+
+    panels.forEach(p => {
+        const sel = document.getElementById(p.selectId);
+        const inp = document.getElementById(p.inputId);
+        const refreshBtn = document.getElementById(p.refreshId);
+        if (!sel || !inp) return;
+
+        // 如果下拉框尚未填充过选项
+        if (sel.getAttribute('data-initialized') !== 'true') {
+            sel.innerHTML = '';
+
+            // 1. 全部音乐库选项
+            const optAll = document.createElement('option');
+            optAll.value = '__ALL__';
+            optAll.textContent = `🌐 全部音乐库 (合并扫描 - 共 ${totalStats.total_files} 首)`;
+            sel.appendChild(optAll);
+
+            // 2. 各个具体目录
+            dirs.forEach(d => {
+                const opt = document.createElement('option');
+                opt.value = d.path;
+                opt.textContent = `📁 ${d.path} (${d.total_files} 首 / ${formatBytes(d.total_size)})`;
+                sel.appendChild(opt);
+            });
+
+            // 3. 自定义输入选项
+            const optCustom = document.createElement('option');
+            optCustom.value = '__CUSTOM__';
+            optCustom.textContent = '✏️ 自定义路径 / 手动输入...';
+            sel.appendChild(optCustom);
+
+            // 默认选中：若只有1个目录则选中该目录，若有多个目录则默认选中第1个或全部
+            if (dirs.length > 1) {
+                sel.value = '__ALL__';
+                inp.value = '__ALL__';
+            } else if (dirs.length === 1) {
+                sel.value = dirs[0].path;
+                inp.value = dirs[0].path;
+            } else {
+                inp.value = defaultDir;
+            }
+
+            sel.setAttribute('data-initialized', 'true');
+
+            // 下拉选择切换事件
+            sel.addEventListener('change', () => {
+                const val = sel.value;
+                if (val === '__CUSTOM__') {
+                    inp.focus();
+                    inp.select();
+                } else {
+                    inp.value = val;
+                }
+                syncAllPanelsDir(val, inp.value);
+                queryDirStats(inp.value, p.statsId);
+            });
+
+            // 输入框修改事件
+            inp.addEventListener('input', () => {
+                const curVal = inp.value.trim();
+                // 检查是否匹配某个预设
+                let matched = false;
+                for (let i = 0; i < sel.options.length; i++) {
+                    if (sel.options[i].value === curVal) {
+                        sel.selectedIndex = i;
+                        matched = true;
+                        break;
+                    }
+                }
+                if (!matched) {
+                    sel.value = '__CUSTOM__';
+                }
+            });
+
+            inp.addEventListener('change', () => {
+                queryDirStats(inp.value, p.statsId);
+            });
+
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', () => {
+                    queryDirStats(inp.value, p.statsId);
+                });
+            }
+        }
+
+        // 触发初次目录统计显示
+        queryDirStats(inp.value || defaultDir, p.statsId);
+    });
+}
+
+// 跨面板同步目录选择状态
+function syncAllPanelsDir(selectedVal, inputVal) {
+    const panels = [
+        { selectId: 'fmt-dir-select', inputId: 'fmt-music-dir', statsId: 'fmt-dir-stats' },
+        { selectId: 'dedup-dir-select', inputId: 'dedup-music-dir', statsId: 'dedup-dir-stats' },
+        { selectId: 'lossless-dir-select', inputId: 'lossless-music-dir', statsId: 'lossless-dir-stats' }
+    ];
+
+    panels.forEach(p => {
+        const sel = document.getElementById(p.selectId);
+        const inp = document.getElementById(p.inputId);
+        if (sel && sel.value !== selectedVal) {
+            sel.value = selectedVal;
+        }
+        if (inp && inp.value !== inputVal && selectedVal !== '__CUSTOM__') {
+            inp.value = inputVal;
+            queryDirStats(inputVal, p.statsId);
+        }
+    });
+}
+
+// 查询指定路径音频文件统计并渲染徽章
+async function queryDirStats(dirPath, badgeElementId) {
+    const badge = document.getElementById(badgeElementId);
+    if (!badge) return;
+
+    dirPath = (dirPath || '').trim();
+    if (!dirPath) {
+        badge.innerHTML = '<span class="stats-loading">⚠️ 请先指定或选择待扫描的目录</span>';
+        return;
+    }
+
+    badge.innerHTML = '<span class="stats-loading">🔍 正在查询目录音频文件...</span>';
+
+    try {
+        const res = await fetch(`${API.dirStats}?path=${encodeURIComponent(dirPath)}`);
+        if (!res.ok) {
+            badge.innerHTML = '<span class="stats-err">❌ 目录不可访问或无读取权限</span>';
+            return;
+        }
+        const data = await res.json();
+        if (!data.exists) {
+            badge.innerHTML = `<span class="stats-err" title="${data.path}">⚠️ 目录不存在或无法访问</span>`;
+            return;
+        }
+
+        const sizeStr = formatBytes(data.total_size);
+        if (data.total_files === 0) {
+            badge.innerHTML = `<span class="stats-empty">📭 目录内未发现支持的音频文件</span>`;
+        } else {
+            const extSummary = Object.entries(data.format_counts || {})
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 4)
+                .map(([ext, count]) => `${ext.replace('.', '')}: ${count}`)
+                .join(', ');
+            
+            badge.innerHTML = `<span class="stats-ok" title="${extSummary ? '格式分布: ' + extSummary : ''}">📁 已检测到 <strong>${data.total_files}</strong> 首音频 (约 ${sizeStr})</span>`;
+        }
+    } catch (e) {
+        badge.innerHTML = '<span class="stats-err">⚠️ 查询目录状态失败</span>';
     }
 }
 

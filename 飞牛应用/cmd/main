@@ -1,0 +1,134 @@
+#!/bin/bash
+
+LOG_FILE="${TRIM_PKGVAR}/info.log"
+PID_FILE="${TRIM_PKGVAR}/app.pid"
+APP_BIN="${TRIM_APPDEST}/music-toolkit-linux-amd64"
+BIN_DIR="${TRIM_APPDEST}/bin"
+
+log_msg() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" >> ${LOG_FILE}
+}
+
+start_process() {
+    if status; then
+        return 0
+    fi
+
+    # 确保主程序与内置 bin 工具具备执行权限
+    chmod +x "${APP_BIN}" 2>/dev/null
+    if [ -d "${BIN_DIR}" ]; then
+        chmod +x "${BIN_DIR}"/* 2>/dev/null
+        export PATH="${BIN_DIR}:$PATH"
+        if [ -f "${BIN_DIR}/ffmpeg" ]; then
+            export FFMPEG_PATH="${BIN_DIR}/ffmpeg"
+        fi
+    fi
+
+    # 导出环境变量
+    export PORT="${TRIM_SERVICE_PORT:-6826}"
+    export DB_PATH="${TRIM_PKGVAR}/music_toolkit.db"
+    
+    if [ -n "$TRIM_DATA_ACCESSIBLE_PATHS" ]; then
+        export MUSIC_DIR="${TRIM_DATA_ACCESSIBLE_PATHS}"
+    elif [ -n "$TRIM_DATA_SHARE_PATHS" ]; then
+        export MUSIC_DIR="${TRIM_DATA_SHARE_PATHS}"
+    else
+        export MUSIC_DIR="/music"
+    fi
+    export OUTPUT_DIR="${TRIM_PKGVAR}/output"
+    mkdir -p "${OUTPUT_DIR}" "${TRIM_PKGVAR}" 2>/dev/null
+
+    log_msg "Starting Music Toolkit process ..."
+    nohup "${APP_BIN}" >> ${LOG_FILE} 2>&1 &
+    printf "%s" "$!" > ${PID_FILE}
+    sleep 1
+
+    if status; then
+        log_msg "Music Toolkit started successfully (PID: $!)."
+        return 0
+    else
+        log_msg "Failed to start Music Toolkit."
+        echo "Failed to start Music Toolkit server. Check ${LOG_FILE}" > "${TRIM_TEMP_LOGFILE}"
+        return 1
+    fi
+}
+
+stop_process() {
+    log_msg "Stopping Music Toolkit process ..."
+
+    if [ -r "${PID_FILE}" ]; then
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        
+        if ! check_process "${pid}"; then
+            rm -f "${PID_FILE}"
+            return 0
+        fi
+
+        kill -TERM "${pid}" >> ${LOG_FILE} 2>&1
+
+        local count=0
+        while check_process "${pid}" && [ $count -lt 10 ]; do
+            sleep 1
+            count=$((count + 1))
+        done
+
+        if check_process "${pid}"; then
+            kill -KILL "${pid}" 2>/dev/null
+            sleep 1
+            rm -f "${PID_FILE}"
+        else
+            rm -f "${PID_FILE}"
+        fi
+    fi
+
+    return 0
+}
+
+check_process() {
+    local pid=$1
+    if [ -n "${pid}" ] && kill -0 "${pid}" 2>/dev/null; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+status() {
+    if [ -f "${PID_FILE}" ]; then
+        pid=$(head -n 1 "${PID_FILE}" | tr -d '[:space:]')
+        if check_process "${pid}"; then
+            return 0
+        else
+            rm -f "${PID_FILE}"
+        fi    
+    fi
+
+    return 1
+}
+
+case $1 in
+start)
+    if start_process; then
+        exit 0
+    else
+        exit 1
+    fi
+    ;;
+stop)
+    if stop_process; then
+        exit 0
+    else
+        exit 1
+    fi
+    ;;
+status)
+    if status; then 
+        exit 0
+    else
+        exit 3
+    fi
+    ;;
+*)
+    exit 1
+    ;;
+esac

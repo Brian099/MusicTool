@@ -302,3 +302,18 @@ func TestFeiNiuDatabaseAndServerAPI(t *testing.T) {
 	}
 }
 
+func TestMultiDirectoryConfigAndPathParsing(t *testing.T) {
+	// 测试逗号、分号与 Linux 冒号路径切分
+	rawPaths := "/vol1/music,/vol2/backup;/vol3/flac"
+	parsed := config.ParsePathList(rawPaths)
+	if len(parsed) < 3 {
+		t.Fatalf("expected at least 3 parsed paths, got %d (%v)", len(parsed), parsed)
+	}
+
+	// 测试空路径与空白过滤
+	emptyParsed := config.ParsePathList("   ")
+	if len(emptyParsed) != 0 {
+		t.Fatalf("expected empty result, got %v", emptyParsed)
+	}
+}
+

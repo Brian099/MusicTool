@@ -505,6 +505,31 @@ body.dark-theme .badge-accent {
     color: var(--text-muted);
 }
 
+.form-label-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+}
+
+.label-badge-tip {
+    font-size: 11px;
+    color: var(--text-sub);
+    font-weight: 400;
+}
+
+.dir-quick-select {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    background-color: var(--bg-card);
+}
+
+.dir-quick-select:hover {
+    border-color: var(--border-strong);
+}
+
 .input-hint {
     font-size: 11px;
     color: var(--text-sub);

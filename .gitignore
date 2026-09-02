@@ -23,4 +23,11 @@ Thumbs.db
 GoMusic-main/
 飞牛音乐/
 
+# 飞牛原生打包临时大文件与产物
+*.fpk
+飞牛应用/app/bin/
+飞牛应用/app/music-toolkit-linux-*
+飞牛应用/fnpack.exe
+collapse.png
+
 

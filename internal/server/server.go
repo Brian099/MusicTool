@@ -176,33 +176,54 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	json.NewEncoder(w).Encode(v)
 }
 
-func collectAudioFiles(targetDir, outputDir string) []string {
-	var list []string
-	absTarget, _ := filepath.Abs(targetDir)
-	absOutput, _ := filepath.Abs(outputDir)
-
-	if _, err := os.Stat(absTarget); os.IsNotExist(err) {
-		return nil
-	}
-
-	filepath.Walk(absTarget, func(path string, info os.FileInfo, err error) error {
-		if err != nil || info == nil {
-			return nil
+func (s *Server) resolveTargetDirs(inputDir string) []string {
+	inputDir = strings.TrimSpace(inputDir)
+	if inputDir == "" || inputDir == "__ALL__" {
+		if len(s.cfg.MusicDirs) > 0 {
+			return s.cfg.MusicDirs
 		}
-		absPath, _ := filepath.Abs(path)
-		if info.IsDir() {
-			if absPath == absOutput || strings.HasPrefix(absPath, absOutput+string(os.PathSeparator)) {
-				return filepath.SkipDir
+		return []string{s.cfg.MusicDir}
+	}
+	parsed := config.ParsePathList(inputDir)
+	if len(parsed) > 0 {
+		return parsed
+	}
+	return []string{inputDir}
+}
+
+func collectAudioFiles(targetDirs []string, outputDir string) []string {
+	var list []string
+	absOutput, _ := filepath.Abs(outputDir)
+	seen := make(map[string]bool)
+
+	for _, tDir := range targetDirs {
+		absTarget, _ := filepath.Abs(tDir)
+		if _, err := os.Stat(absTarget); os.IsNotExist(err) {
+			continue
+		}
+
+		filepath.Walk(absTarget, func(path string, info os.FileInfo, err error) error {
+			if err != nil || info == nil {
+				return nil
+			}
+			absPath, _ := filepath.Abs(path)
+			if info.IsDir() {
+				if absPath == absOutput || strings.HasPrefix(absPath, absOutput+string(os.PathSeparator)) {
+					return filepath.SkipDir
+				}
+				return nil
+			}
+
+			ext := strings.ToLower(filepath.Ext(path))
+			if config.DefaultAudioExtensions[ext] {
+				if !seen[absPath] {
+					seen[absPath] = true
+					list = append(list, path)
+				}
 			}
 			return nil
-		}
-
-		ext := strings.ToLower(filepath.Ext(path))
-		if config.DefaultAudioExtensions[ext] {
-			list = append(list, path)
-		}
-		return nil
-	})
+		})
+	}
 	return list
 }
 
@@ -215,7 +236,7 @@ type DirStats struct {
 	FormatCounts map[string]int `json:"format_counts"`
 }
 
-func scanDirStats(targetDir, outputDir string) DirStats {
+func scanSingleDirStats(targetDir, outputDir string) DirStats {
 	absTarget, _ := filepath.Abs(targetDir)
 	absOutput, _ := filepath.Abs(outputDir)
 
@@ -255,21 +276,52 @@ func scanDirStats(targetDir, outputDir string) DirStats {
 	return stats
 }
 
+func scanMultiDirStats(targetDirs []string, outputDir string) DirStats {
+	if len(targetDirs) == 1 {
+		return scanSingleDirStats(targetDirs[0], outputDir)
+	}
+
+	combined := DirStats{
+		Path:         strings.Join(targetDirs, ", "),
+		Exists:       false,
+		FormatCounts: make(map[string]int),
+	}
+
+	for _, d := range targetDirs {
+		st := scanSingleDirStats(d, outputDir)
+		if st.Exists {
+			combined.Exists = true
+		}
+		combined.TotalFiles += st.TotalFiles
+		combined.TotalSize += st.TotalSize
+		for ext, count := range st.FormatCounts {
+			combined.FormatCounts[ext] += count
+		}
+	}
+	return combined
+}
+
 // ----------------- 系统状态与目录查询 -----------------
 
 func (s *Server) handleDirStats(w http.ResponseWriter, r *http.Request) {
 	dirPath := r.URL.Query().Get("path")
-	if dirPath == "" {
-		dirPath = s.cfg.MusicDir
-	}
-	stats := scanDirStats(dirPath, s.cfg.OutputDir)
+	targetDirs := s.resolveTargetDirs(dirPath)
+	stats := scanMultiDirStats(targetDirs, s.cfg.OutputDir)
 	writeJSON(w, http.StatusOK, stats)
 }
 
 func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	_, ffmpegErr := exec.LookPath(s.cfg.FFmpegPath)
 	chromaOk := deduplicator.IsChromaprintAvailable(s.cfg.FFmpegPath)
-	musicStats := scanDirStats(s.cfg.MusicDir, s.cfg.OutputDir)
+	
+	// 分别统计每个已发现的目录
+	var dirStatsList []DirStats
+	for _, d := range s.cfg.MusicDirs {
+		st := scanSingleDirStats(d, s.cfg.OutputDir)
+		dirStatsList = append(dirStatsList, st)
+	}
+
+	totalStats := scanMultiDirStats(s.cfg.MusicDirs, s.cfg.OutputDir)
 
 	s.mu.Lock()
 	fmtProg := s.formatProg
@@ -278,12 +330,14 @@ func (s *Server) handleSystemStatus(w http.ResponseWriter, r *http.Request) {
 	s.mu.Unlock()
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"music_dir":        s.cfg.MusicDir,
-		"music_dir_exists": musicStats.Exists,
-		"output_dir":       s.cfg.OutputDir,
-		"has_ffmpeg":       ffmpegErr == nil,
-		"has_chromaprint":  chromaOk,
-		"music_stats":      musicStats,
+		"music_dir":         s.cfg.MusicDir,
+		"music_dirs":        dirStatsList,
+		"music_dir_exists":  totalStats.Exists,
+		"total_music_stats": totalStats,
+		"output_dir":        s.cfg.OutputDir,
+		"has_ffmpeg":        ffmpegErr == nil,
+		"has_chromaprint":   chromaOk,
+		"music_stats":       totalStats,
 		"tasks": map[string]any{
 			"format_scan":   fmtProg,
 			"dedup_compute": dedupProg,
@@ -322,16 +376,13 @@ func (s *Server) handleFormatScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runFormatScanAsync(req FormatScanReq) {
-	scanDir := req.MusicDir
-	if scanDir == "" {
-		scanDir = s.cfg.MusicDir
-	}
+	targetDirs := s.resolveTargetDirs(req.MusicDir)
 	workers := req.Workers
 	if workers <= 0 {
 		workers = s.cfg.MaxWorkers
 	}
 
-	files := collectAudioFiles(scanDir, s.cfg.OutputDir)
+	files := collectAudioFiles(targetDirs, s.cfg.OutputDir)
 
 	s.mu.Lock()
 	s.formatProg.Total = int64(len(files))
@@ -759,16 +810,13 @@ func (s *Server) handleDedupCancel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runDedupComputeAsync(ctx context.Context, req DedupComputeReq) {
-	scanDir := req.MusicDir
-	if scanDir == "" {
-		scanDir = s.cfg.MusicDir
-	}
+	targetDirs := s.resolveTargetDirs(req.MusicDir)
 	workers := req.Workers
 	if workers <= 0 {
 		workers = s.cfg.MaxWorkers
 	}
 
-	files := collectAudioFiles(scanDir, s.cfg.OutputDir)
+	files := collectAudioFiles(targetDirs, s.cfg.OutputDir)
 
 	// 清理不存在的文件
 	existingMap := make(map[string]bool)
@@ -1054,16 +1102,13 @@ func (s *Server) handleLosslessScan(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) runLosslessScanAsync(req LosslessScanReq) {
-	scanDir := req.MusicDir
-	if scanDir == "" {
-		scanDir = s.cfg.MusicDir
-	}
+	targetDirs := s.resolveTargetDirs(req.MusicDir)
 	workers := req.Workers
 	if workers <= 0 {
 		workers = s.cfg.MaxWorkers
 	}
 
-	allAudio := collectAudioFiles(scanDir, s.cfg.OutputDir)
+	allAudio := collectAudioFiles(targetDirs, s.cfg.OutputDir)
 
 	// 专门过滤待检查的无损音频格式 (.flac, .ape, .wav, .alac, .aiff, .wv)
 	var losslessFiles []string

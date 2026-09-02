@@ -1,0 +1,7 @@
+#!/bin/bash
+# 确保主程序与内置二进制工具拥有可执行权限
+chmod +x "$TRIM_APPDEST/music-toolkit-linux-amd64" 2>/dev/null
+if [ -d "$TRIM_APPDEST/bin" ]; then
+  chmod +x "$TRIM_APPDEST/bin"/* 2>/dev/null
+fi
+exit 0

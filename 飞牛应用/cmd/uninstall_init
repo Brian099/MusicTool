@@ -1,0 +1,11 @@
+#!/bin/bash
+# 卸载前停止服务
+PID_FILE="$TRIM_PKGVAR/app.pid"
+if [ -f "$PID_FILE" ]; then
+  PID=$(cat "$PID_FILE")
+  kill -TERM "$PID" 2>/dev/null
+  sleep 1
+  kill -9 "$PID" 2>/dev/null
+  rm -f "$PID_FILE"
+fi
+exit 0

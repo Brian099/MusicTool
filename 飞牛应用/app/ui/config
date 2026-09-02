@@ -1,0 +1,13 @@
+{
+    ".url": {
+        "music-toolkit.Application": {
+            "title": "音乐工具箱",
+            "icon": "images/icon_{0}.png",
+            "type": "url",
+            "protocol": "",
+            "port": "6826",
+            "url": "/",
+            "allUsers": true
+        }
+    }
+}

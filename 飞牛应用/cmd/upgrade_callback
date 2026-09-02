@@ -1,0 +1,3 @@
+#!/bin/bash
+chmod +x "$TRIM_APPDEST/music-toolkit-linux-amd64" 2>/dev/null
+exit 0
