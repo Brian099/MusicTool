@@ -1,7 +1,7 @@
 appname               = music-toolkit
-version               = 2.0.0
+version               = 2.1.0
 display_name          = 音乐工具箱
-desc                  = 音乐格式一致性检查、AcoustID 声学指纹智能去重、真假无损频谱鉴别与飞牛音乐歌单管理工具
+desc                  = 音乐格式一致性检查、AcoustID 声学指纹智能去重、真假无损频谱鉴别、歌单获取导出与飞牛音乐原生管理工具
 arch                  = x86_64
 source                = thirdparty
 maintainer            = Brian

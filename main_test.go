@@ -2,6 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -316,4 +319,108 @@ func TestMultiDirectoryConfigAndPathParsing(t *testing.T) {
 		t.Fatalf("expected empty result, got %v", emptyParsed)
 	}
 }
+
+func TestDualAuthAndSystemUnlock(t *testing.T) {
+	tempDir, _ := os.MkdirTemp("", "auth_test_*")
+	defer os.RemoveAll(tempDir)
+	db, err := database.OpenDB(filepath.Join(tempDir, "test.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	ctx := context.Background()
+
+	// 1. 检查初始状态无用户
+	cnt, err := db.CountUsers(ctx)
+	if err != nil || cnt != 0 {
+		t.Fatalf("expected 0 users, got %d (err: %v)", cnt, err)
+	}
+
+	// 2. 创建用户
+	u, err := db.CreateUser(ctx, "admin", "admin123")
+	if err != nil {
+		t.Fatalf("CreateUser failed: %v", err)
+	}
+	if u.Username != "admin" {
+		t.Fatalf("unexpected username: %s", u.Username)
+	}
+
+	// 3. 密码验证
+	verifiedUser, err := db.VerifyUserPassword(ctx, "admin", "admin123")
+	if err != nil || verifiedUser == nil {
+		t.Fatalf("VerifyUserPassword failed: %v", err)
+	}
+	_, err = db.VerifyUserPassword(ctx, "admin", "wrongpassword")
+	if err == nil {
+		t.Fatalf("expected error on wrong password, got nil")
+	}
+
+	// 4. 重复用户名应报错
+	_, err = db.CreateUser(ctx, "admin", "anotherpass")
+	if err == nil {
+		t.Fatalf("expected error on duplicate username, got nil")
+	}
+
+	// 5. 验证 Server 接口与 SystemUnlock 中间件
+	cfg := &config.Config{
+		MusicDir:  tempDir,
+		OutputDir: filepath.Join(tempDir, "out"),
+		Port:      6828,
+	}
+	frontendFS := GetFrontendFileSystem()
+	srv := server.NewServer(cfg, db, frontendFS)
+	handler := srv.Handler()
+
+	// 未解锁时请求受保护接口 -> 401
+	recProtected := httptest.NewRecorder()
+	reqProtected := httptest.NewRequest("GET", "/api/format/records", nil)
+	handler.ServeHTTP(recProtected, reqProtected)
+	if recProtected.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized when not unlocked, got %d", recProtected.Code)
+	}
+
+	// 用户登录获取 Token
+	loginBody := `{"username":"admin","password":"admin123"}`
+	recLogin := httptest.NewRecorder()
+	reqLogin := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(loginBody))
+	handler.ServeHTTP(recLogin, reqLogin)
+	if recLogin.Code != http.StatusOK {
+		t.Fatalf("expected 200 on login, got %d: %s", recLogin.Code, recLogin.Body.String())
+	}
+	var loginResp struct {
+		Success  bool   `json:"success"`
+		Token    string `json:"token"`
+		Username string `json:"username"`
+	}
+	json.Unmarshal(recLogin.Body.Bytes(), &loginResp)
+	if !loginResp.Success || loginResp.Token == "" {
+		t.Fatalf("login failed or empty token: %+v", loginResp)
+	}
+
+	// 携带 Token 请求受保护接口 -> 200 OK
+	recWithToken := httptest.NewRecorder()
+	reqWithToken := httptest.NewRequest("GET", "/api/format/records", nil)
+	reqWithToken.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	handler.ServeHTTP(recWithToken, reqWithToken)
+	if recWithToken.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with valid token, got %d", recWithToken.Code)
+	}
+
+	// 用户退出登录
+	recLogout := httptest.NewRecorder()
+	reqLogout := httptest.NewRequest("POST", "/api/auth/logout", nil)
+	reqLogout.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	handler.ServeHTTP(recLogout, reqLogout)
+
+	// 退出后再次请求受保护接口 -> 401
+	recAfterLogout := httptest.NewRecorder()
+	reqAfterLogout := httptest.NewRequest("GET", "/api/format/records", nil)
+	reqAfterLogout.Header.Set("Authorization", "Bearer "+loginResp.Token)
+	handler.ServeHTTP(recAfterLogout, reqAfterLogout)
+	if recAfterLogout.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401 Unauthorized after logout, got %d", recAfterLogout.Code)
+	}
+}
+
 

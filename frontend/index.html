@@ -41,6 +41,10 @@
                     <span class="dot"></span>
                     <span class="label" id="music-dir-label">未挂载</span>
                 </div>
+                <div class="chip" id="chip-local-user" title="本地管理员登录状态">
+                    <span class="dot"></span>
+                    <span class="label" id="local-user-label">本地: 未登录</span>
+                </div>
                 <div class="chip" id="chip-feiniu" title="飞牛 NAS 音乐连接状态">
                     <span class="dot"></span>
                     <span class="label" id="feiniu-chip-label">飞牛NAS</span>
@@ -53,21 +57,25 @@
                     <button class="nav-tab active" data-tab="tab-format">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
                         <span>格式检查</span>
+                        <span class="tab-lock-icon" title="系统未解锁" style="display: none;">🔒</span>
                     </button>
                     <button class="nav-tab" data-tab="tab-dedup">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                         <span>音频去重</span>
                         <span class="badge-accent">Songloft 引擎</span>
+                        <span class="tab-lock-icon" title="系统未解锁" style="display: none;">🔒</span>
                     </button>
                     <button class="nav-tab" data-tab="tab-lossless">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
                         <span>真假无损</span>
                         <span class="badge-accent">FLAC/APE</span>
+                        <span class="tab-lock-icon" title="系统未解锁" style="display: none;">🔒</span>
                     </button>
                     <button class="nav-tab" data-tab="tab-playlist">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"></path><circle cx="6" cy="18" r="3"></circle><circle cx="18" cy="16" r="3"></circle><line x1="3" y1="6" x2="6" y2="6"></line><line x1="3" y1="10" x2="6" y2="10"></line></svg>
                         <span>歌单获取</span>
                         <span class="badge-accent">网易/QQ/汽水</span>
+                        <span class="tab-lock-icon" title="系统未解锁" style="display: none;">🔒</span>
                     </button>
                     <button class="nav-tab" data-tab="tab-feiniu">
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
@@ -76,6 +84,12 @@
                     </button>
                 </nav>
 
+                <!-- 本地账号登出按钮 (已登录时显示) -->
+                <button id="btn-logout-local" class="btn-header-action" title="退出本地管理员账号" style="display: none;">
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    <span>退出本地</span>
+                </button>
+
                 <!-- 明暗主题切换 -->
                 <button id="btn-toggle-theme" class="btn-theme-toggle" title="切换明暗主题">☀️</button>
             </div>
@@ -83,6 +97,142 @@
 
         <!-- 主内容区域 -->
         <main class="app-main">
+            <!-- 全局系统解锁认证门户 (系统未解锁时展示) -->
+            <section id="system-auth-portal" class="auth-portal-wrapper" style="display: none;">
+                <div class="auth-portal-container glass-panel">
+                    <div class="auth-portal-header">
+                        <div class="auth-icon-badge">🔐</div>
+                        <h2>系统访问与权限解锁</h2>
+                        <p class="subtitle">系统支持两种解锁方式：使用本地管理员账号登录（非飞牛 NAS 环境推荐），或连接飞牛 NAS 音乐原生服务。满足任意一种即可解锁使用全部音频工具。</p>
+                    </div>
+
+                    <!-- 认证模式切换 -->
+                    <div class="auth-tabs-switch">
+                        <button type="button" class="auth-tab-btn active" data-target="panel-auth-local">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                            <span>系统本地账号</span>
+                        </button>
+                        <button type="button" class="auth-tab-btn" data-target="panel-auth-feiniu">
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
+                            <span>飞牛 NAS 音乐直连</span>
+                        </button>
+                    </div>
+
+                    <!-- 选项卡 1: 本地账号 (首次设置 或 正常登录) -->
+                    <div id="panel-auth-local" class="auth-panel-content active">
+                        <!-- 首次初始化表单 -->
+                        <div id="auth-box-init" style="display: none;">
+                            <div class="auth-banner init-banner">
+                                <span class="badge-tag">首次使用初始化</span>
+                                <h4>🎉 创建系统管理员账号</h4>
+                                <p>检测到系统尚未创建管理员账号，请设定初始管理员用户名和密码。创建成功将自动登录并全量解锁系统功能。</p>
+                            </div>
+                            <form id="form-auth-init" class="config-form" style="margin-top: 16px;">
+                                <div class="form-group">
+                                    <label for="auth-init-username">管理员用户名</label>
+                                    <input type="text" id="auth-init-username" class="input-text" value="admin" placeholder="输入用户名，例如 admin" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="auth-init-password">设置密码</label>
+                                    <input type="password" id="auth-init-password" class="input-text" placeholder="输入密码 (至少 4 位)" required minlength="4">
+                                </div>
+                                <div class="form-group">
+                                    <label for="auth-init-password-confirm">确认密码</label>
+                                    <input type="password" id="auth-init-password-confirm" class="input-text" placeholder="再次输入密码" required minlength="4">
+                                </div>
+                                <button type="submit" id="btn-auth-init-submit" class="btn btn-primary btn-block">
+                                    🚀 创建管理员并解锁系统
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- 正常登录表单 -->
+                        <div id="auth-box-login">
+                            <div class="auth-banner login-banner">
+                                <span class="badge-tag">本地密码登录</span>
+                                <h4>👤 系统管理员登录</h4>
+                                <p>请输入之前创建的管理员用户名和密码，登录成功即可解锁系统全套工具。</p>
+                            </div>
+                            <form id="form-auth-login" class="config-form" style="margin-top: 16px;">
+                                <div class="form-group">
+                                    <label for="auth-login-username">用户名</label>
+                                    <input type="text" id="auth-login-username" class="input-text" placeholder="请输入用户名" required>
+                                </div>
+                                <div class="form-group">
+                                    <label for="auth-login-password">登录密码</label>
+                                    <input type="password" id="auth-login-password" class="input-text" placeholder="请输入密码" required>
+                                </div>
+                                <button type="submit" id="btn-auth-login-submit" class="btn btn-primary btn-block">
+                                    🔓 登录并解锁系统
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <!-- 选项卡 2: 飞牛 NAS 音乐直连 -->
+                    <div id="panel-auth-feiniu" class="auth-panel-content">
+                        <div class="auth-banner feiniu-banner">
+                            <span class="badge-tag">FnOS NAS 原生集成</span>
+                            <h4>⚡ 飞牛 NAS 音乐服务直连</h4>
+                            <p>适用于部署在飞牛 NAS 或局域网内拥有飞牛 NAS 的用户。连接飞牛 NAS 音乐原生服务后将自动解锁系统全部工具及飞牛歌单管理。</p>
+                        </div>
+                        <form id="form-portal-feiniu-connect" class="config-form" style="margin-top: 16px;">
+                            <div class="form-group">
+                                <label for="portal-fn-server-url">飞牛 NAS 服务地址</label>
+                                <input type="text" id="portal-fn-server-url" class="input-text" value="http://172.17.0.1:5666" placeholder="例如：http://172.17.0.1:5666" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="portal-fn-username">飞牛用户名</label>
+                                <input type="text" id="portal-fn-username" class="input-text" placeholder="例如：admin" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="portal-fn-password">登录密码</label>
+                                <input type="password" id="portal-fn-password" class="input-text" placeholder="飞牛系统登录密码" required>
+                            </div>
+                            <div class="form-group">
+                                <label for="portal-fn-access-code">安全码 (可选)</label>
+                                <input type="password" id="portal-fn-access-code" class="input-text" placeholder="若 NAS 开启了安全码保护请输入">
+                            </div>
+                            <button type="submit" id="btn-portal-fn-connect" class="btn btn-success btn-block">
+                                ⚡ 连接飞牛并解锁系统
+                            </button>
+                        </form>
+                    </div>
+
+                    <!-- 解锁功能特性一览 -->
+                    <div class="auth-features-preview">
+                        <div class="feature-item">
+                            <span class="feature-icon">🔍</span>
+                            <div>
+                                <h5>格式一致性检查</h5>
+                                <p>Magic Bytes 真实特征识别</p>
+                            </div>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">🎵</span>
+                            <div>
+                                <h5>Songloft 音频去重</h5>
+                                <p>声学指纹聚类高精度比对</p>
+                            </div>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">💎</span>
+                            <div>
+                                <h5>真假无损辨别</h5>
+                                <p>高频频谱衰减与伪无损识别</p>
+                            </div>
+                        </div>
+                        <div class="feature-item">
+                            <span class="feature-icon">📋</span>
+                            <div>
+                                <h5>多平台歌单同步</h5>
+                                <p>网易/QQ/汽水音乐解析导出</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- TAB 1: 格式一致性检查器 -->
             <section id="tab-format" class="tab-content active">
                 <div class="grid-layout">

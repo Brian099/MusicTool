@@ -2,11 +2,16 @@ package database
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -86,6 +91,16 @@ type FeiNiuConfigRecord struct {
 	DeviceID     string `json:"device_id"`
 	AccessCode   string `json:"access_code"`
 	UserToken    string `json:"user_token"`
+	UpdatedAt    int64  `json:"updated_at"`
+}
+
+// SystemUser 系统本地管理员账户记录
+type SystemUser struct {
+	ID           int64  `json:"id"`
+	Username     string `json:"username"`
+	PasswordHash string `json:"-"`
+	Salt         string `json:"-"`
+	CreatedAt    int64  `json:"created_at"`
 	UpdatedAt    int64  `json:"updated_at"`
 }
 
@@ -199,6 +214,15 @@ func (d *DB) initSchema() error {
 		access_code TEXT,
 		user_token TEXT,
 		updated_at INTEGER
+	);
+
+	CREATE TABLE IF NOT EXISTS system_users (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		username TEXT UNIQUE NOT NULL,
+		password_hash TEXT NOT NULL,
+		salt TEXT NOT NULL,
+		created_at INTEGER NOT NULL,
+		updated_at INTEGER NOT NULL
 	);
 	`
 	_, err := d.db.Exec(schema)
@@ -624,5 +648,100 @@ func (d *DB) ClearFeiNiuConfig(ctx context.Context) error {
 	_, err := d.db.ExecContext(ctx, "DELETE FROM feiniu_config WHERE id = 1")
 	return err
 }
+
+// ----------------- 系统本地用户管理 -----------------
+
+// HashUserPassword 计算密码加盐 SHA-256 哈希值
+func HashUserPassword(password, salt string) string {
+	sum := sha256.Sum256([]byte(password + ":" + salt))
+	return hex.EncodeToString(sum[:])
+}
+
+// GenerateSalt 生成 16 字节随机十六进制盐值
+func GenerateSalt() string {
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		return fmt.Sprintf("%d", time.Now().UnixNano())
+	}
+	return hex.EncodeToString(b)
+}
+
+// CountUsers 统计系统中本地用户数量 (用于判断是否需要首次初始化创建账号)
+func (d *DB) CountUsers(ctx context.Context) (int, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	var count int
+	err := d.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM system_users").Scan(&count)
+	return count, err
+}
+
+// CreateUser 创建系统管理员或本地用户
+func (d *DB) CreateUser(ctx context.Context, username, password string) (*SystemUser, error) {
+	if username == "" {
+		return nil, errors.New("用户名不能为空")
+	}
+	if len(password) < 4 {
+		return nil, errors.New("密码长度不能少于 4 位")
+	}
+
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	salt := GenerateSalt()
+	hash := HashUserPassword(password, salt)
+	now := time.Now().Unix()
+
+	query := `INSERT INTO system_users (username, password_hash, salt, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`
+	res, err := d.db.ExecContext(ctx, query, username, hash, salt, now, now)
+	if err != nil {
+		return nil, fmt.Errorf("创建用户失败: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	return &SystemUser{
+		ID:        id,
+		Username:  username,
+		CreatedAt: now,
+		UpdatedAt: now,
+	}, nil
+}
+
+// GetUserByUsername 根据用户名获取用户详情
+func (d *DB) GetUserByUsername(ctx context.Context, username string) (*SystemUser, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	query := `SELECT id, username, password_hash, salt, created_at, updated_at FROM system_users WHERE username = ?`
+	row := d.db.QueryRowContext(ctx, query, username)
+
+	var u SystemUser
+	err := row.Scan(&u.ID, &u.Username, &u.PasswordHash, &u.Salt, &u.CreatedAt, &u.UpdatedAt)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &u, nil
+}
+
+// VerifyUserPassword 验证用户名与原始密码，成功返回用户实例
+func (d *DB) VerifyUserPassword(ctx context.Context, username, password string) (*SystemUser, error) {
+	u, err := d.GetUserByUsername(ctx, username)
+	if err != nil {
+		return nil, err
+	}
+	if u == nil {
+		return nil, errors.New("用户名或密码错误")
+	}
+
+	expectedHash := HashUserPassword(password, u.Salt)
+	if expectedHash != u.PasswordHash {
+		return nil, errors.New("用户名或密码错误")
+	}
+
+	return u, nil
+}
+
 
 

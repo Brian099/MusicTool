@@ -1,6 +1,10 @@
 // ==================== Music Toolkit 前端交互逻辑 ====================
 
 const API = {
+    authStatus: '/api/auth/status',
+    authInit: '/api/auth/init',
+    authLogin: '/api/auth/login',
+    authLogout: '/api/auth/logout',
     systemStatus: '/api/system/status',
     dirStats: '/api/system/dir-stats',
     formatScan: '/api/format/scan',
@@ -43,8 +47,38 @@ const API = {
     audioStream: '/api/audio/stream'
 };
 
+// 拦截原生 fetch 以自动附加 Bearer 凭据并在 401 时提醒
+const originalFetch = window.fetch;
+window.fetch = async function(url, options = {}) {
+    options = options || {};
+    options.headers = options.headers || {};
+    const token = localStorage.getItem('music_toolkit_token');
+    if (token) {
+        if (options.headers instanceof Headers) {
+            if (!options.headers.has('Authorization')) {
+                options.headers.set('Authorization', `Bearer ${token}`);
+            }
+        } else if (Array.isArray(options.headers)) {
+            const hasAuth = options.headers.some(([k]) => k.toLowerCase() === 'authorization');
+            if (!hasAuth) options.headers.push(['Authorization', `Bearer ${token}`]);
+        } else {
+            if (!options.headers['Authorization'] && !options.headers['authorization']) {
+                options.headers['Authorization'] = `Bearer ${token}`;
+            }
+        }
+    }
+    const response = await originalFetch(url, options);
+    if (response.status === 401 && typeof url === 'string' && !url.includes('/api/auth/')) {
+        if (typeof checkAuthStatus === 'function') {
+            checkAuthStatus();
+        }
+    }
+    return response;
+};
+
 // 状态对象
 const state = {
+    authStatus: null,
     system: null,
     formatRecords: [],
     losslessRecords: [],
@@ -455,11 +489,22 @@ function initNavTabs() {
     const tabs = document.querySelectorAll('.nav-tab');
     tabs.forEach(tab => {
         tab.addEventListener('click', () => {
+            const isUnlocked = state.authStatus && state.authStatus.unlocked;
+            const targetId = tab.getAttribute('data-tab');
+
+            // 如果系统未解锁且点击的是受保护工具Tab
+            if (!isUnlocked && targetId !== 'tab-feiniu') {
+                showToast('系统尚未解锁：请先登录本地账号或连接飞牛音乐', 'warning');
+                showAuthPortal();
+                return;
+            }
+
             tabs.forEach(t => t.classList.remove('active'));
             document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
 
+            hideAuthPortal();
+
             tab.classList.add('active');
-            const targetId = tab.getAttribute('data-tab');
             const targetEl = document.getElementById(targetId);
             if (targetEl) targetEl.classList.add('active');
 
@@ -1911,10 +1956,12 @@ function initFeiNiuManager() {
                 if (result.success) {
                     showToast(`飞牛 NAS 连接成功！欢迎 ${result.username}`, 'success');
                     await checkFeiNiuStatus();
+                    await checkAuthStatus();
                     loadFeiNiuPlaylists();
                 } else {
                     showToast(`连接失败: ${result.error || '未知错误'}`, 'error');
                     checkFeiNiuStatus();
+                    checkAuthStatus();
                 }
             } catch (err) {
                 showToast(`请求异常: ${err.message}`, 'error');
@@ -1934,7 +1981,8 @@ function initFeiNiuManager() {
                 showToast('已断开飞牛 NAS 连接', 'info');
                 state.feiniuPlaylists = [];
                 renderFeiNiuPlaylists([]);
-                checkFeiNiuStatus();
+                await checkFeiNiuStatus();
+                await checkAuthStatus();
             } catch (err) {
                 showToast('断开失败: ' + err.message, 'error');
             }
@@ -2520,8 +2568,267 @@ function initSidebarCollapse() {
     });
 }
 
+// ==================== 系统双重认证与权限管理 ====================
+
+function showAuthPortal() {
+    const portal = document.getElementById('system-auth-portal');
+    if (portal) portal.style.display = 'flex';
+    document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+    document.querySelectorAll('.nav-tab').forEach(t => t.classList.remove('active'));
+}
+
+function hideAuthPortal() {
+    const portal = document.getElementById('system-auth-portal');
+    if (portal) portal.style.display = 'none';
+}
+
+async function checkAuthStatus() {
+    try {
+        const res = await originalFetch(API.authStatus, {
+            headers: {
+                'Authorization': `Bearer ${localStorage.getItem('music_toolkit_token') || ''}`
+            }
+        });
+        if (!res.ok) return null;
+        const data = await res.json();
+        state.authStatus = data;
+
+        // 本地用户 Chip 状态
+        const localChip = document.getElementById('chip-local-user');
+        const localLabel = document.getElementById('local-user-label');
+        const logoutBtn = document.getElementById('btn-logout-local');
+
+        if (data.local_authenticated) {
+            if (localChip) localChip.classList.add('active');
+            if (localLabel) localLabel.textContent = `本地: ${data.local_user}`;
+            if (logoutBtn) logoutBtn.style.display = 'inline-flex';
+        } else {
+            if (localChip) localChip.classList.remove('active');
+            if (localLabel) localLabel.textContent = '本地: 未登录';
+            if (logoutBtn) logoutBtn.style.display = 'none';
+        }
+
+        // 飞牛连接 Chip 状态
+        const fnChip = document.getElementById('chip-feiniu');
+        const fnLabel = document.getElementById('feiniu-chip-label');
+        if (data.feiniu_connected) {
+            if (fnChip) fnChip.classList.add('active');
+            if (fnLabel) fnLabel.textContent = `飞牛: ${data.feiniu_user || '已连接'}`;
+        } else {
+            if (fnChip) fnChip.classList.remove('active');
+            if (fnLabel) fnLabel.textContent = '飞牛NAS';
+        }
+
+        const lockIcons = document.querySelectorAll('.tab-lock-icon');
+        const toolTabs = document.querySelectorAll('.nav-tab:not([data-tab="tab-feiniu"])');
+
+        if (data.unlocked) {
+            // 系统全量解锁
+            toolTabs.forEach(t => t.classList.remove('locked'));
+            lockIcons.forEach(icon => icon.style.display = 'none');
+            hideAuthPortal();
+
+            // 如果当前无激活 Tab，默认激活格式检查
+            let activeTab = document.querySelector('.nav-tab.active');
+            if (!activeTab) {
+                const defaultTab = document.querySelector('.nav-tab[data-tab="tab-format"]');
+                if (defaultTab) {
+                    defaultTab.classList.add('active');
+                    const targetEl = document.getElementById('tab-format');
+                    if (targetEl) targetEl.classList.add('active');
+                }
+            }
+        } else {
+            // 系统未解锁，进入认证守卫模式
+            toolTabs.forEach(t => t.classList.add('locked'));
+            lockIcons.forEach(icon => icon.style.display = 'inline');
+            showAuthPortal();
+
+            // 根据是否已初始化切换显示创建账号或密码登录
+            const initBox = document.getElementById('auth-box-init');
+            const loginBox = document.getElementById('auth-box-login');
+            if (data.initialized) {
+                if (initBox) initBox.style.display = 'none';
+                if (loginBox) loginBox.style.display = 'block';
+            } else {
+                if (initBox) initBox.style.display = 'block';
+                if (loginBox) loginBox.style.display = 'none';
+            }
+        }
+
+        return data;
+    } catch (e) {
+        console.error('获取系统认证状态失败:', e);
+        return null;
+    }
+}
+
+function initAuthManager() {
+    // 门户模式选项卡切换 (本地账号 vs 飞牛直连)
+    const switchBtns = document.querySelectorAll('.auth-tab-btn');
+    switchBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            switchBtns.forEach(b => b.classList.remove('active'));
+            document.querySelectorAll('.auth-panel-content').forEach(p => p.classList.remove('active'));
+
+            btn.classList.add('active');
+            const targetId = btn.getAttribute('data-target');
+            const targetEl = document.getElementById(targetId);
+            if (targetEl) targetEl.classList.add('active');
+        });
+    });
+
+    // 首次使用创建管理员表单
+    const initForm = document.getElementById('form-auth-init');
+    if (initForm) {
+        initForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('auth-init-username').value.trim();
+            const password = document.getElementById('auth-init-password').value;
+            const confirm = document.getElementById('auth-init-password-confirm').value;
+            const submitBtn = document.getElementById('btn-auth-init-submit');
+
+            if (!username) {
+                showToast('请输入用户名', 'warning');
+                return;
+            }
+            if (password.length < 4) {
+                showToast('密码长度至少需要 4 位', 'warning');
+                return;
+            }
+            if (password !== confirm) {
+                showToast('两次输入的密码不一致，请核对', 'error');
+                return;
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ 正在初始化...';
+
+            try {
+                const res = await originalFetch(API.authInit, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const result = await res.json();
+                if (result.success && result.token) {
+                    localStorage.setItem('music_toolkit_token', result.token);
+                    showToast(`🎉 管理员账号创建成功！欢迎 ${result.username}，系统已解锁。`, 'success');
+                    await checkAuthStatus();
+                    loadFormatRecords();
+                } else {
+                    showToast(result.error || '创建管理员失败', 'error');
+                }
+            } catch (err) {
+                showToast('初始化请求异常: ' + err.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🚀 创建管理员并解锁系统';
+            }
+        });
+    }
+
+    // 本地账号登录表单
+    const loginForm = document.getElementById('form-auth-login');
+    if (loginForm) {
+        loginForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const username = document.getElementById('auth-login-username').value.trim();
+            const password = document.getElementById('auth-login-password').value;
+            const submitBtn = document.getElementById('btn-auth-login-submit');
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '⏳ 正在登录...';
+
+            try {
+                const res = await originalFetch(API.authLogin, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ username, password })
+                });
+                const result = await res.json();
+                if (result.success && result.token) {
+                    localStorage.setItem('music_toolkit_token', result.token);
+                    showToast(`🔓 登录成功！欢迎回来 ${result.username}`, 'success');
+                    await checkAuthStatus();
+                    loadFormatRecords();
+                } else {
+                    showToast(result.error || '登录失败，请检查账号密码', 'error');
+                }
+            } catch (err) {
+                showToast('登录请求异常: ' + err.message, 'error');
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.textContent = '🔓 登录并解锁系统';
+            }
+        });
+    }
+
+    // 本地账号退出登录
+    const logoutBtn = document.getElementById('btn-logout-local');
+    if (logoutBtn) {
+        logoutBtn.addEventListener('click', async () => {
+            if (!confirm('确认退出当前本地管理员登录？退出后若未连接飞牛音乐将重新锁定系统。')) return;
+            try {
+                await originalFetch(API.authLogout, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${localStorage.getItem('music_toolkit_token') || ''}`
+                    }
+                });
+            } catch (e) {
+                // ignore
+            }
+            localStorage.removeItem('music_toolkit_token');
+            showToast('已退出本地账号', 'info');
+            await checkAuthStatus();
+        });
+    }
+
+    // 认证门户飞牛直连表单
+    const portalFnForm = document.getElementById('form-portal-feiniu-connect');
+    if (portalFnForm) {
+        portalFnForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('btn-portal-fn-connect');
+            btn.disabled = true;
+            btn.textContent = '⏳ 正在连接飞牛 NAS...';
+
+            const payload = {
+                server_url: document.getElementById('portal-fn-server-url').value.trim(),
+                username: document.getElementById('portal-fn-username').value.trim(),
+                password: document.getElementById('portal-fn-password').value,
+                access_code: document.getElementById('portal-fn-access-code').value.trim()
+            };
+
+            try {
+                const res = await originalFetch(API.feiniuConnect, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const result = await res.json();
+                if (result.success) {
+                    showToast(`⚡ 飞牛 NAS 连接成功！系统已解锁。欢迎 ${result.username}`, 'success');
+                    await checkFeiNiuStatus();
+                    await checkAuthStatus();
+                    loadFeiNiuPlaylists();
+                    loadFormatRecords();
+                } else {
+                    showToast(`连接失败: ${result.error || '未知错误'}`, 'error');
+                }
+            } catch (err) {
+                showToast(`连接请求异常: ${err.message}`, 'error');
+            } finally {
+                btn.disabled = false;
+                btn.textContent = '⚡ 连接飞牛并解锁系统';
+            }
+        });
+    }
+}
+
 // 页面加载启动
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     initThemeToggle();
     initSidebarCollapse();
     initActionModalEvents();
@@ -2534,8 +2841,14 @@ document.addEventListener('DOMContentLoaded', () => {
     initPlaylistExtractor();
     initFeiNiuManager();
     initFeiNiuImportModal();
-    checkFeiNiuStatus();
-    loadFormatRecords();
+    initAuthManager();
+
+    const auth = await checkAuthStatus();
+    await checkFeiNiuStatus();
+
+    if (auth && auth.unlocked) {
+        loadFormatRecords();
+    }
 });
 
 

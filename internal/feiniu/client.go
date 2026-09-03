@@ -197,6 +197,20 @@ func (c *Client) GetStatus(ctx context.Context) StatusResponse {
 	}
 }
 
+// IsConnected 快速检查当前是否配置了有效飞牛凭据与 Token
+func (c *Client) IsConnected() bool {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.serverURL != "" && c.userToken != ""
+}
+
+// GetUsername 获取当前连接的飞牛用户名
+func (c *Client) GetUsername() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.username
+}
+
 // GetDeviceID 获取或返回现有设备 ID
 func (c *Client) GetDeviceID() string {
 	c.mu.RLock()

@@ -2,7 +2,9 @@ package server
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/csv"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -26,6 +28,14 @@ import (
 	"music-toolkit/internal/lossless"
 	"music-toolkit/internal/playlist"
 )
+
+// LocalSession 本地管理员会话
+type LocalSession struct {
+	Token     string `json:"token"`
+	Username  string `json:"username"`
+	CreatedAt int64  `json:"created_at"`
+	ExpiresAt int64  `json:"expires_at"`
+}
 
 // TaskProgress 通用任务进度
 type TaskProgress struct {
@@ -56,6 +66,9 @@ type Server struct {
 	fnImporter   *feiniu.Importer
 	frontendFS   http.FileSystem
 
+	sessionsMu sync.RWMutex
+	sessions   map[string]*LocalSession
+
 	mu            sync.Mutex
 	formatProg    TaskProgress
 	dedupProg     TaskProgress
@@ -81,6 +94,7 @@ func NewServer(cfg *config.Config, db *database.DB, frontendFS http.FileSystem) 
 		feiniuClient: fnClient,
 		fnImporter:   fnImporter,
 		frontendFS:   frontendFS,
+		sessions:     make(map[string]*LocalSession),
 		formatProg:   TaskProgress{Status: "idle"},
 		dedupProg:    TaskProgress{Status: "idle"},
 		losslessProg: TaskProgress{Status: "idle"},
@@ -91,54 +105,64 @@ func NewServer(cfg *config.Config, db *database.DB, frontendFS http.FileSystem) 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 
-	// API 路由
+	// 认证与系统解锁状态 (公共接口)
+	mux.HandleFunc("GET /api/auth/status", s.handleAuthStatus)
+	mux.HandleFunc("POST /api/auth/init", s.handleAuthInit)
+	mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
+	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
+
+	// 系统硬件与环境状态 (公共接口)
 	mux.HandleFunc("GET /api/system/status", s.handleSystemStatus)
 	mux.HandleFunc("GET /api/system/dir-stats", s.handleDirStats)
-	mux.HandleFunc("POST /api/format/scan", s.handleFormatScan)
-	mux.HandleFunc("GET /api/format/progress", s.handleFormatProgress)
-	mux.HandleFunc("GET /api/format/records", s.handleFormatRecords)
-	mux.HandleFunc("POST /api/format/action-single", s.handleFormatActionSingle)
-	mux.HandleFunc("POST /api/format/action-batch", s.handleFormatActionBatch)
-	mux.HandleFunc("POST /api/format/fix-single", s.handleFormatActionSingle)
-	mux.HandleFunc("POST /api/format/fix-batch", s.handleFormatActionBatch)
-	mux.HandleFunc("GET /api/format/export", s.handleFormatExport)
 
-	mux.HandleFunc("POST /api/dedup/compute", s.handleDedupCompute)
-	mux.HandleFunc("POST /api/dedup/cancel", s.handleDedupCancel)
-	mux.HandleFunc("GET /api/dedup/progress", s.handleDedupProgress)
-	mux.HandleFunc("GET /api/dedup/groups", s.handleDedupGroups)
-	mux.HandleFunc("POST /api/dedup/clean", s.handleDedupClean)
-	mux.HandleFunc("POST /api/dedup/clean-recommended", s.handleDedupCleanRecommended)
-
-	mux.HandleFunc("POST /api/lossless/scan", s.handleLosslessScan)
-	mux.HandleFunc("GET /api/lossless/progress", s.handleLosslessProgress)
-	mux.HandleFunc("GET /api/lossless/records", s.handleLosslessRecords)
-	mux.HandleFunc("GET /api/lossless/export", s.handleLosslessExport)
-
-	// 歌单提取相关路由
-	mux.HandleFunc("POST /api/playlist/parse", s.handlePlaylistParse)
-	mux.HandleFunc("GET /api/playlist/history", s.handlePlaylistHistoryList)
-	mux.HandleFunc("GET /api/playlist/history-detail", s.handlePlaylistHistoryDetail)
-	mux.HandleFunc("POST /api/playlist/history-delete", s.handlePlaylistHistoryDelete)
-	mux.HandleFunc("POST /api/playlist/history-clear", s.handlePlaylistHistoryClear)
-	mux.HandleFunc("POST /api/playlist/export", s.handlePlaylistExport)
-
-	// 飞牛音乐歌单与连接路由
+	// 飞牛音乐凭据连接与状态 (公共接口)
 	mux.HandleFunc("POST /api/feiniu/connect", s.handleFeiNiuConnect)
 	mux.HandleFunc("GET /api/feiniu/status", s.handleFeiNiuStatus)
 	mux.HandleFunc("POST /api/feiniu/disconnect", s.handleFeiNiuDisconnect)
-	mux.HandleFunc("GET /api/feiniu/playlists", s.handleFeiNiuPlaylists)
-	mux.HandleFunc("GET /api/feiniu/playlist/tracks", s.handleFeiNiuPlaylistTracks)
-	mux.HandleFunc("POST /api/feiniu/playlist/create", s.handleFeiNiuPlaylistCreate)
-	mux.HandleFunc("POST /api/feiniu/playlist/edit", s.handleFeiNiuPlaylistEdit)
-	mux.HandleFunc("POST /api/feiniu/playlist/delete", s.handleFeiNiuPlaylistDelete)
-	mux.HandleFunc("POST /api/feiniu/playlist/add-tracks", s.handleFeiNiuPlaylistAddTracks)
-	mux.HandleFunc("POST /api/feiniu/playlist/remove-tracks", s.handleFeiNiuPlaylistRemoveTracks)
-	mux.HandleFunc("POST /api/feiniu/playlist/purge", s.handleFeiNiuPlaylistPurge)
-	mux.HandleFunc("POST /api/feiniu/playlist/import", s.handleFeiNiuPlaylistImport)
-	mux.HandleFunc("GET /api/feiniu/cover", s.handleFeiNiuCover)
 
-	mux.HandleFunc("GET /api/audio/stream", s.handleAudioStream)
+	// 以下业务接口均受到系统解锁保护 (需本地账号已登录 或 飞牛音乐已连接)
+	mux.HandleFunc("POST /api/format/scan", s.requireSystemUnlock(s.handleFormatScan))
+	mux.HandleFunc("GET /api/format/progress", s.requireSystemUnlock(s.handleFormatProgress))
+	mux.HandleFunc("GET /api/format/records", s.requireSystemUnlock(s.handleFormatRecords))
+	mux.HandleFunc("POST /api/format/action-single", s.requireSystemUnlock(s.handleFormatActionSingle))
+	mux.HandleFunc("POST /api/format/action-batch", s.requireSystemUnlock(s.handleFormatActionBatch))
+	mux.HandleFunc("POST /api/format/fix-single", s.requireSystemUnlock(s.handleFormatActionSingle))
+	mux.HandleFunc("POST /api/format/fix-batch", s.requireSystemUnlock(s.handleFormatActionBatch))
+	mux.HandleFunc("GET /api/format/export", s.requireSystemUnlock(s.handleFormatExport))
+
+	mux.HandleFunc("POST /api/dedup/compute", s.requireSystemUnlock(s.handleDedupCompute))
+	mux.HandleFunc("POST /api/dedup/cancel", s.requireSystemUnlock(s.handleDedupCancel))
+	mux.HandleFunc("GET /api/dedup/progress", s.requireSystemUnlock(s.handleDedupProgress))
+	mux.HandleFunc("GET /api/dedup/groups", s.requireSystemUnlock(s.handleDedupGroups))
+	mux.HandleFunc("POST /api/dedup/clean", s.requireSystemUnlock(s.handleDedupClean))
+	mux.HandleFunc("POST /api/dedup/clean-recommended", s.requireSystemUnlock(s.handleDedupCleanRecommended))
+
+	mux.HandleFunc("POST /api/lossless/scan", s.requireSystemUnlock(s.handleLosslessScan))
+	mux.HandleFunc("GET /api/lossless/progress", s.requireSystemUnlock(s.handleLosslessProgress))
+	mux.HandleFunc("GET /api/lossless/records", s.requireSystemUnlock(s.handleLosslessRecords))
+	mux.HandleFunc("GET /api/lossless/export", s.requireSystemUnlock(s.handleLosslessExport))
+
+	// 歌单提取相关路由
+	mux.HandleFunc("POST /api/playlist/parse", s.requireSystemUnlock(s.handlePlaylistParse))
+	mux.HandleFunc("GET /api/playlist/history", s.requireSystemUnlock(s.handlePlaylistHistoryList))
+	mux.HandleFunc("GET /api/playlist/history-detail", s.requireSystemUnlock(s.handlePlaylistHistoryDetail))
+	mux.HandleFunc("POST /api/playlist/history-delete", s.requireSystemUnlock(s.handlePlaylistHistoryDelete))
+	mux.HandleFunc("POST /api/playlist/history-clear", s.requireSystemUnlock(s.handlePlaylistHistoryClear))
+	mux.HandleFunc("POST /api/playlist/export", s.requireSystemUnlock(s.handlePlaylistExport))
+
+	// 飞牛音乐歌单操作路由
+	mux.HandleFunc("GET /api/feiniu/playlists", s.requireSystemUnlock(s.handleFeiNiuPlaylists))
+	mux.HandleFunc("GET /api/feiniu/playlist/tracks", s.requireSystemUnlock(s.handleFeiNiuPlaylistTracks))
+	mux.HandleFunc("POST /api/feiniu/playlist/create", s.requireSystemUnlock(s.handleFeiNiuPlaylistCreate))
+	mux.HandleFunc("POST /api/feiniu/playlist/edit", s.requireSystemUnlock(s.handleFeiNiuPlaylistEdit))
+	mux.HandleFunc("POST /api/feiniu/playlist/delete", s.requireSystemUnlock(s.handleFeiNiuPlaylistDelete))
+	mux.HandleFunc("POST /api/feiniu/playlist/add-tracks", s.requireSystemUnlock(s.handleFeiNiuPlaylistAddTracks))
+	mux.HandleFunc("POST /api/feiniu/playlist/remove-tracks", s.requireSystemUnlock(s.handleFeiNiuPlaylistRemoveTracks))
+	mux.HandleFunc("POST /api/feiniu/playlist/purge", s.requireSystemUnlock(s.handleFeiNiuPlaylistPurge))
+	mux.HandleFunc("POST /api/feiniu/playlist/import", s.requireSystemUnlock(s.handleFeiNiuPlaylistImport))
+	mux.HandleFunc("GET /api/feiniu/cover", s.requireSystemUnlock(s.handleFeiNiuCover))
+
+	mux.HandleFunc("GET /api/audio/stream", s.requireSystemUnlock(s.handleAudioStream))
 
 	// 静态文件托管
 	fileServer := http.FileServer(s.frontendFS)
@@ -1696,5 +1720,202 @@ func (s *Server) handleFeiNiuCover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "public, max-age=86400")
 	io.Copy(w, reader)
 }
+
+// ----------------- 系统认证与解锁管理 -----------------
+
+func (s *Server) extractToken(r *http.Request) string {
+	authHdr := r.Header.Get("Authorization")
+	if strings.HasPrefix(authHdr, "Bearer ") {
+		return strings.TrimSpace(strings.TrimPrefix(authHdr, "Bearer "))
+	}
+	if cookie, err := r.Cookie("music_toolkit_token"); err == nil && cookie.Value != "" {
+		return cookie.Value
+	}
+	if tok := r.URL.Query().Get("token"); tok != "" {
+		return tok
+	}
+	return ""
+}
+
+func (s *Server) createSession(username string) string {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		b = []byte(fmt.Sprintf("%d-%s", time.Now().UnixNano(), username))
+	}
+	token := hex.EncodeToString(b)
+	now := time.Now().Unix()
+	expires := now + 7*24*3600 // 7 天有效
+
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	s.sessions[token] = &LocalSession{
+		Token:     token,
+		Username:  username,
+		CreatedAt: now,
+		ExpiresAt: expires,
+	}
+	return token
+}
+
+func (s *Server) removeSession(token string) {
+	s.sessionsMu.Lock()
+	defer s.sessionsMu.Unlock()
+	delete(s.sessions, token)
+}
+
+func (s *Server) getSessionFromRequest(r *http.Request) (string, bool) {
+	token := s.extractToken(r)
+	if token == "" {
+		return "", false
+	}
+	s.sessionsMu.RLock()
+	defer s.sessionsMu.RUnlock()
+	sess, ok := s.sessions[token]
+	if !ok {
+		return "", false
+	}
+	if time.Now().Unix() > sess.ExpiresAt {
+		return "", false
+	}
+	return sess.Username, true
+}
+
+func (s *Server) isSystemUnlocked(r *http.Request) (bool, string, string) {
+	localUser, localAuth := s.getSessionFromRequest(r)
+	feiniuConnected := s.feiniuClient.IsConnected()
+	feiniuUser := s.feiniuClient.GetUsername()
+
+	return localAuth || feiniuConnected, localUser, feiniuUser
+}
+
+func (s *Server) requireSystemUnlock(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		unlocked, _, _ := s.isSystemUnlocked(r)
+		if !unlocked {
+			writeJSON(w, http.StatusUnauthorized, map[string]any{
+				"error": "系统尚未解锁，请先登录本地账号或连接飞牛音乐",
+				"code":  401,
+			})
+			return
+		}
+		next(w, r)
+	}
+}
+
+func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userCount, err := s.db.CountUsers(ctx)
+	initialized := err == nil && userCount > 0
+
+	localUser, localAuth := s.getSessionFromRequest(r)
+	feiniuConnected := s.feiniuClient.IsConnected()
+	feiniuUser := s.feiniuClient.GetUsername()
+	unlocked := localAuth || feiniuConnected
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"initialized":         initialized,
+		"local_authenticated": localAuth,
+		"local_user":          localUser,
+		"feiniu_connected":    feiniuConnected,
+		"feiniu_user":         feiniuUser,
+		"unlocked":            unlocked,
+	})
+}
+
+func (s *Server) handleAuthInit(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	userCount, err := s.db.CountUsers(ctx)
+	if err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	if userCount > 0 {
+		writeJSON(w, http.StatusBadRequest, map[string]any{
+			"success": false,
+			"error":   "系统已完成初始化，管理员已存在，请直接登录",
+		})
+		return
+	}
+
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json request", 400)
+		return
+	}
+
+	username := strings.TrimSpace(req.Username)
+	if username == "" {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   "用户名不能为空",
+		})
+		return
+	}
+	if len(req.Password) < 4 {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   "密码长度不能少于 4 位",
+		})
+		return
+	}
+
+	user, err := s.db.CreateUser(ctx, username, req.Password)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	token := s.createSession(user.Username)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":  true,
+		"token":    token,
+		"username": user.Username,
+	})
+}
+
+func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid json request", 400)
+		return
+	}
+
+	username := strings.TrimSpace(req.Username)
+	user, err := s.db.VerifyUserPassword(r.Context(), username, req.Password)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   err.Error(),
+		})
+		return
+	}
+
+	token := s.createSession(user.Username)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success":  true,
+		"token":    token,
+		"username": user.Username,
+	})
+}
+
+func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
+	token := s.extractToken(r)
+	if token != "" {
+		s.removeSession(token)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"success": true,
+	})
+}
+
 
 
