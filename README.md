@@ -114,3 +114,68 @@ docker run -d \
 http://<服务器IP>:6826
 ```
 默认采用现代清新亮色主题，右上角支持 **☀️ 亮色 / 🌙 暗色** 一键切换。
+
+---
+
+## 🔐 双重认证与系统解锁机制
+
+系统采用灵活的双重认证模式，全面兼容非飞牛环境（普通 PC / Linux 服务器 / Docker 部署）与飞牛 NAS 原生环境：
+1. **系统本地账号验证**：
+   - **首次使用**：若系统尚未创建管理员账号，前端自动引导设置管理员用户名和密码，创建成功即自动登录并解锁系统；
+   - **后续使用**：使用已设定的管理员用户名与密码登录。
+2. **飞牛 NAS 音乐直连验证**：
+   - 输入飞牛 NAS 地址与用户凭据直连登录，自动保活并全量解锁。
+3. **全局解锁规则**：只要满足 **【本地账号已登录】** 或 **【飞牛 NAS 已连接】** 任意一种，即可全量解锁并使用系统全部音频工具（格式检查、音频去重、真假无损、歌单提取等）。
+
+---
+
+## 🛠️ 本地编译与打包指南
+
+### 1. 编译 Windows 本地运行版 (`.exe`)
+在项目根目录下执行：
+```powershell
+go build -ldflags="-s -w" -o music-toolkit.exe .
+```
+> 生成产物：`music-toolkit.exe`，双击或在终端执行即可启动服务。
+
+### 2. 交叉编译 Linux AMD64（Linux 服务器 / 飞牛 NAS x86_64）
+```powershell
+# PowerShell:
+$env:CGO_ENABLED="0"; $env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o music-toolkit-linux-amd64 .
+
+# CMD (命令提示符):
+set CGO_ENABLED=0&& set GOOS=linux&& set GOARCH=amd64&& go build -ldflags="-s -w" -o music-toolkit-linux-amd64 .
+
+# Linux / macOS Bash:
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o music-toolkit-linux-amd64 .
+```
+
+### 3. 交叉编译 Linux ARM64（ARM 架构设备）
+```powershell
+# PowerShell:
+$env:CGO_ENABLED="0"; $env:GOOS="linux"; $env:GOARCH="arm64"; go build -ldflags="-s -w" -o music-toolkit-linux-arm64 .
+
+# CMD (命令提示符):
+set CGO_ENABLED=0&& set GOOS=linux&& set GOARCH=arm64&& go build -ldflags="-s -w" -o music-toolkit-linux-arm64 .
+
+# Linux / macOS Bash:
+CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -ldflags="-s -w" -o music-toolkit-linux-arm64 .
+```
+
+### 4. 飞牛应用原生安装包 (`.fpk`) 一键更新与打包
+飞牛 NAS 官方原生应用包采用 `.fpk` 格式，本地更新并打包步骤如下：
+
+```powershell
+# 步骤 1：编译最新的 Linux AMD64 二进制
+$env:CGO_ENABLED="0"; $env:GOOS="linux"; $env:GOARCH="amd64"; go build -ldflags="-s -w" -o music-toolkit-linux-amd64 .
+
+# 步骤 2：将新编译的二进制复制到飞牛应用目录中
+Copy-Item -Path music-toolkit-linux-amd64 -Destination .\飞牛应用\app\music-toolkit-linux-amd64 -Force
+
+# 步骤 3：进入飞牛应用目录，使用 fnpack 工具构建安装包
+cd 飞牛应用
+.\fnpack.exe build
+cd ..
+```
+> 执行完毕后，将在 `飞牛应用/` 目录下生成最新的 `music-toolkit.fpk` 文件，可直接上传至飞牛 NAS 应用中心进行离线安装或升级。
+
