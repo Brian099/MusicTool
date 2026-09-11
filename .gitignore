@@ -25,7 +25,6 @@ GoMusic-main/
 飞牛音乐/
 
 # 飞牛原生打包临时产物
-*.fpk
 飞牛应用/app/music-toolkit-linux-*
 collapse.png
 

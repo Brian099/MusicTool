@@ -148,25 +148,8 @@ func LoadConfig() *Config {
 		discoveredDirs = append(discoveredDirs, "/music")
 	}
 
-	// 检查目录是否存在，若存在且包含子目录（如 Docker 子卷挂载），自动将子目录加入候选
-	var finalDirs []string
-	for _, dir := range discoveredDirs {
-		finalDirs = append(finalDirs, dir)
-		if fi, err := os.Stat(dir); err == nil && fi.IsDir() {
-			entries, err := os.ReadDir(dir)
-			if err == nil {
-				for _, entry := range entries {
-					if entry.IsDir() && !strings.HasPrefix(entry.Name(), ".") && !strings.HasPrefix(entry.Name(), "@") {
-						subPath := filepath.Join(dir, entry.Name())
-						if !seen[subPath] {
-							seen[subPath] = true
-							finalDirs = append(finalDirs, subPath)
-						}
-					}
-				}
-			}
-		}
-	}
+	// 仅保留环境变量（或飞牛权限中心传入）中显式配置的目录，不自动将子目录展开为独立挂载目录
+	finalDirs := discoveredDirs
 
 	outputDir := getEnv("OUTPUT_DIR", "/output")
 	dbPath := getEnv("DB_PATH", "data/music_toolkit.db")
