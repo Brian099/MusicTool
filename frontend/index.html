@@ -41,10 +41,6 @@
                     <span class="dot"></span>
                     <span class="label" id="music-dir-label">未挂载</span>
                 </div>
-                <div class="chip" id="chip-local-user" title="本地管理员登录状态">
-                    <span class="dot"></span>
-                    <span class="label" id="local-user-label">本地: 未登录</span>
-                </div>
                 <div class="chip" id="chip-feiniu" title="飞牛 NAS 音乐连接状态">
                     <span class="dot"></span>
                     <span class="label" id="feiniu-chip-label">飞牛NAS</span>
@@ -81,6 +77,7 @@
                         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
                         <span>飞牛音乐</span>
                         <span class="badge-accent">FnOS NAS</span>
+                        <span class="tab-lock-icon" title="系统未解锁" style="display: none;">🔒</span>
                     </button>
                 </nav>
 
@@ -103,22 +100,10 @@
                     <div class="auth-portal-header">
                         <div class="auth-icon-badge">🔐</div>
                         <h2>系统访问与权限解锁</h2>
-                        <p class="subtitle">系统支持两种解锁方式：使用本地管理员账号登录（非飞牛 NAS 环境推荐），或连接飞牛 NAS 音乐原生服务。满足任意一种即可解锁使用全部音频工具。</p>
+                        <p class="subtitle">系统强制要求登录本地管理员账号后方可使用全部音频工具。飞牛 NAS 音乐服务仅作为歌单管理的连接凭据，需在登录后于「飞牛音乐」页面单独连接。</p>
                     </div>
 
-                    <!-- 认证模式切换 -->
-                    <div class="auth-tabs-switch">
-                        <button type="button" class="auth-tab-btn active" data-target="panel-auth-local">
-                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                            <span>系统本地账号</span>
-                        </button>
-                        <button type="button" class="auth-tab-btn" data-target="panel-auth-feiniu">
-                            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
-                            <span>飞牛 NAS 音乐直连</span>
-                        </button>
-                    </div>
-
-                    <!-- 选项卡 1: 本地账号 (首次设置 或 正常登录) -->
+                    <!-- 本地账号登录 (首次设置 或 正常登录) -->
                     <div id="panel-auth-local" class="auth-panel-content active">
                         <!-- 首次初始化表单 -->
                         <div id="auth-box-init" style="display: none;">
@@ -167,36 +152,6 @@
                                 </button>
                             </form>
                         </div>
-                    </div>
-
-                    <!-- 选项卡 2: 飞牛 NAS 音乐直连 -->
-                    <div id="panel-auth-feiniu" class="auth-panel-content">
-                        <div class="auth-banner feiniu-banner">
-                            <span class="badge-tag">FnOS NAS 原生集成</span>
-                            <h4>⚡ 飞牛 NAS 音乐服务直连</h4>
-                            <p>适用于部署在飞牛 NAS 或局域网内拥有飞牛 NAS 的用户。连接飞牛 NAS 音乐原生服务后将自动解锁系统全部工具及飞牛歌单管理。</p>
-                        </div>
-                        <form id="form-portal-feiniu-connect" class="config-form" style="margin-top: 16px;">
-                            <div class="form-group">
-                                <label for="portal-fn-server-url">飞牛 NAS 服务地址</label>
-                                <input type="text" id="portal-fn-server-url" class="input-text" value="http://172.17.0.1:5666" placeholder="例如：http://172.17.0.1:5666" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="portal-fn-username">飞牛用户名</label>
-                                <input type="text" id="portal-fn-username" class="input-text" placeholder="例如：admin" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="portal-fn-password">登录密码</label>
-                                <input type="password" id="portal-fn-password" class="input-text" placeholder="飞牛系统登录密码" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="portal-fn-access-code">安全码 (可选)</label>
-                                <input type="password" id="portal-fn-access-code" class="input-text" placeholder="若 NAS 开启了安全码保护请输入">
-                            </div>
-                            <button type="submit" id="btn-portal-fn-connect" class="btn btn-success btn-block">
-                                ⚡ 连接飞牛并解锁系统
-                            </button>
-                        </form>
                     </div>
 
                     <!-- 解锁功能特性一览 -->

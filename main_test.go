@@ -320,7 +320,7 @@ func TestMultiDirectoryConfigAndPathParsing(t *testing.T) {
 	}
 }
 
-func TestDualAuthAndSystemUnlock(t *testing.T) {
+func TestLocalAuthGateAndSystemUnlock(t *testing.T) {
 	tempDir, _ := os.MkdirTemp("", "auth_test_*")
 	defer os.RemoveAll(tempDir)
 	db, err := database.OpenDB(filepath.Join(tempDir, "test.db"))
@@ -380,6 +380,22 @@ func TestDualAuthAndSystemUnlock(t *testing.T) {
 		t.Fatalf("expected 401 Unauthorized when not unlocked, got %d", recProtected.Code)
 	}
 
+	// 飞牛相关接口同样需要本地登录，不得作为解锁凭据
+	for _, c := range []struct{ method, path string }{
+		{"GET", "/api/feiniu/status"},
+		{"POST", "/api/feiniu/connect"},
+		{"POST", "/api/feiniu/disconnect"},
+		{"GET", "/api/system/status"},
+		{"GET", "/api/system/dir-stats"},
+	} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(c.method, c.path, strings.NewReader("{}"))
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("%s %s should require local login, got %d", c.method, c.path, rec.Code)
+		}
+	}
+
 	// 用户登录获取 Token
 	loginBody := `{"username":"admin","password":"admin123"}`
 	recLogin := httptest.NewRecorder()
@@ -405,6 +421,29 @@ func TestDualAuthAndSystemUnlock(t *testing.T) {
 	handler.ServeHTTP(recWithToken, reqWithToken)
 	if recWithToken.Code != http.StatusOK {
 		t.Fatalf("expected 200 OK with valid token, got %d", recWithToken.Code)
+	}
+
+	// 登录响应应下发 HttpOnly 会话 Cookie，供封面/音频等子资源请求自动携带凭据
+	var authCookie *http.Cookie
+	for _, ck := range recLogin.Result().Cookies() {
+		if ck.Name == "music_toolkit_token" {
+			authCookie = ck
+		}
+	}
+	if authCookie == nil {
+		t.Fatalf("expected music_toolkit_token cookie on login response")
+	}
+	if !authCookie.HttpOnly {
+		t.Fatalf("expected auth cookie to be HttpOnly")
+	}
+
+	// 仅携带 Cookie（无 Authorization 头）也应通过鉴权，模拟 <img>/<audio> 子资源请求
+	recWithCookie := httptest.NewRecorder()
+	reqWithCookie := httptest.NewRequest("GET", "/api/feiniu/status", nil)
+	reqWithCookie.AddCookie(&http.Cookie{Name: "music_toolkit_token", Value: loginResp.Token})
+	handler.ServeHTTP(recWithCookie, reqWithCookie)
+	if recWithCookie.Code != http.StatusOK {
+		t.Fatalf("expected 200 OK with auth cookie only, got %d", recWithCookie.Code)
 	}
 
 	// 用户退出登录

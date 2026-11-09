@@ -269,6 +269,7 @@ function initActionModalEvents() {
 async function fetchSystemStatus() {
     try {
         const res = await fetch(API.systemStatus);
+        if (!res.ok) return;
         const data = await res.json();
         state.system = data;
 
@@ -492,9 +493,9 @@ function initNavTabs() {
             const isUnlocked = state.authStatus && state.authStatus.unlocked;
             const targetId = tab.getAttribute('data-tab');
 
-            // 如果系统未解锁且点击的是受保护工具Tab
-            if (!isUnlocked && targetId !== 'tab-feiniu') {
-                showToast('系统尚未解锁：请先登录本地账号或连接飞牛音乐', 'warning');
+            // 如果系统未解锁（未登录本地管理员），所有功能 Tab 均不可进入
+            if (!isUnlocked) {
+                showToast('系统尚未解锁：请先登录本地管理员账号', 'warning');
                 showAuthPortal();
                 return;
             }
@@ -2593,20 +2594,9 @@ async function checkAuthStatus() {
         const data = await res.json();
         state.authStatus = data;
 
-        // 本地用户 Chip 状态
-        const localChip = document.getElementById('chip-local-user');
-        const localLabel = document.getElementById('local-user-label');
+        // 本地登录态仅通过「退出登录」按钮体现（顶栏不再显示登录状态标签）
         const logoutBtn = document.getElementById('btn-logout-local');
-
-        if (data.local_authenticated) {
-            if (localChip) localChip.classList.add('active');
-            if (localLabel) localLabel.textContent = `本地: ${data.local_user}`;
-            if (logoutBtn) logoutBtn.style.display = 'inline-flex';
-        } else {
-            if (localChip) localChip.classList.remove('active');
-            if (localLabel) localLabel.textContent = '本地: 未登录';
-            if (logoutBtn) logoutBtn.style.display = 'none';
-        }
+        if (logoutBtn) logoutBtn.style.display = data.local_authenticated ? 'inline-flex' : 'none';
 
         // 飞牛连接 Chip 状态
         const fnChip = document.getElementById('chip-feiniu');
@@ -2664,20 +2654,6 @@ async function checkAuthStatus() {
 }
 
 function initAuthManager() {
-    // 门户模式选项卡切换 (本地账号 vs 飞牛直连)
-    const switchBtns = document.querySelectorAll('.auth-tab-btn');
-    switchBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            switchBtns.forEach(b => b.classList.remove('active'));
-            document.querySelectorAll('.auth-panel-content').forEach(p => p.classList.remove('active'));
-
-            btn.classList.add('active');
-            const targetId = btn.getAttribute('data-target');
-            const targetEl = document.getElementById(targetId);
-            if (targetEl) targetEl.classList.add('active');
-        });
-    });
-
     // 首次使用创建管理员表单
     const initForm = document.getElementById('form-auth-init');
     if (initForm) {
@@ -2715,6 +2691,8 @@ function initAuthManager() {
                     localStorage.setItem('music_toolkit_token', result.token);
                     showToast(`🎉 管理员账号创建成功！欢迎 ${result.username}，系统已解锁。`, 'success');
                     await checkAuthStatus();
+                    await fetchSystemStatus();
+                    await checkFeiNiuStatus();
                     loadFormatRecords();
                 } else {
                     showToast(result.error || '创建管理员失败', 'error');
@@ -2751,6 +2729,8 @@ function initAuthManager() {
                     localStorage.setItem('music_toolkit_token', result.token);
                     showToast(`🔓 登录成功！欢迎回来 ${result.username}`, 'success');
                     await checkAuthStatus();
+                    await fetchSystemStatus();
+                    await checkFeiNiuStatus();
                     loadFormatRecords();
                 } else {
                     showToast(result.error || '登录失败，请检查账号密码', 'error');
@@ -2784,47 +2764,6 @@ function initAuthManager() {
             await checkAuthStatus();
         });
     }
-
-    // 认证门户飞牛直连表单
-    const portalFnForm = document.getElementById('form-portal-feiniu-connect');
-    if (portalFnForm) {
-        portalFnForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const btn = document.getElementById('btn-portal-fn-connect');
-            btn.disabled = true;
-            btn.textContent = '⏳ 正在连接飞牛 NAS...';
-
-            const payload = {
-                server_url: document.getElementById('portal-fn-server-url').value.trim(),
-                username: document.getElementById('portal-fn-username').value.trim(),
-                password: document.getElementById('portal-fn-password').value,
-                access_code: document.getElementById('portal-fn-access-code').value.trim()
-            };
-
-            try {
-                const res = await originalFetch(API.feiniuConnect, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
-                const result = await res.json();
-                if (result.success) {
-                    showToast(`⚡ 飞牛 NAS 连接成功！系统已解锁。欢迎 ${result.username}`, 'success');
-                    await checkFeiNiuStatus();
-                    await checkAuthStatus();
-                    loadFeiNiuPlaylists();
-                    loadFormatRecords();
-                } else {
-                    showToast(`连接失败: ${result.error || '未知错误'}`, 'error');
-                }
-            } catch (err) {
-                showToast(`连接请求异常: ${err.message}`, 'error');
-            } finally {
-                btn.disabled = false;
-                btn.textContent = '⚡ 连接飞牛并解锁系统';
-            }
-        });
-    }
 }
 
 // 页面加载启动
@@ -2833,7 +2772,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     initSidebarCollapse();
     initActionModalEvents();
     initDirStatsWatchers();
-    fetchSystemStatus();
     initNavTabs();
     initFormatChecker();
     initDeduplicator();
@@ -2844,9 +2782,11 @@ document.addEventListener('DOMContentLoaded', async () => {
     initAuthManager();
 
     const auth = await checkAuthStatus();
-    await checkFeiNiuStatus();
 
+    // 系统状态与飞牛状态接口均需登录，未解锁时不再请求，避免 401 噪音
     if (auth && auth.unlocked) {
+        await fetchSystemStatus();
+        await checkFeiNiuStatus();
         loadFormatRecords();
     }
 });

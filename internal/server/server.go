@@ -111,16 +111,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/auth/login", s.handleAuthLogin)
 	mux.HandleFunc("POST /api/auth/logout", s.handleAuthLogout)
 
-	// 系统硬件与环境状态 (公共接口)
-	mux.HandleFunc("GET /api/system/status", s.handleSystemStatus)
-	mux.HandleFunc("GET /api/system/dir-stats", s.handleDirStats)
+	// 系统硬件与环境状态 (需本地管理员登录)
+	mux.HandleFunc("GET /api/system/status", s.requireSystemUnlock(s.handleSystemStatus))
+	mux.HandleFunc("GET /api/system/dir-stats", s.requireSystemUnlock(s.handleDirStats))
 
-	// 飞牛音乐凭据连接与状态 (公共接口)
-	mux.HandleFunc("POST /api/feiniu/connect", s.handleFeiNiuConnect)
-	mux.HandleFunc("GET /api/feiniu/status", s.handleFeiNiuStatus)
-	mux.HandleFunc("POST /api/feiniu/disconnect", s.handleFeiNiuDisconnect)
+	// 飞牛音乐凭据连接与状态 (需本地管理员登录，飞牛仅作为音乐服务凭据)
+	mux.HandleFunc("POST /api/feiniu/connect", s.requireSystemUnlock(s.handleFeiNiuConnect))
+	mux.HandleFunc("GET /api/feiniu/status", s.requireSystemUnlock(s.handleFeiNiuStatus))
+	mux.HandleFunc("POST /api/feiniu/disconnect", s.requireSystemUnlock(s.handleFeiNiuDisconnect))
 
-	// 以下业务接口均受到系统解锁保护 (需本地账号已登录 或 飞牛音乐已连接)
+	// 以下业务接口均受到系统解锁保护 (需本地管理员已登录)
 	mux.HandleFunc("POST /api/format/scan", s.requireSystemUnlock(s.handleFormatScan))
 	mux.HandleFunc("GET /api/format/progress", s.requireSystemUnlock(s.handleFormatProgress))
 	mux.HandleFunc("GET /api/format/records", s.requireSystemUnlock(s.handleFormatRecords))
@@ -1723,12 +1723,44 @@ func (s *Server) handleFeiNiuCover(w http.ResponseWriter, r *http.Request) {
 
 // ----------------- 系统认证与解锁管理 -----------------
 
+// authCookieName 本地管理员会话 Cookie 名称
+const authCookieName = "music_toolkit_token"
+
+// setAuthCookie 下发 HttpOnly 会话 Cookie。
+// fetch 请求已通过 Authorization 头携带凭据，Cookie 主要服务于
+// <img src="/api/feiniu/cover">、<audio src="/api/audio/stream"> 这类
+// 无法自定义请求头的子资源请求。
+func (s *Server) setAuthCookie(w http.ResponseWriter, r *http.Request, token string) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     authCookieName,
+		Value:    token,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+		MaxAge:   7 * 24 * 3600,
+	})
+}
+
+// clearAuthCookie 清除会话 Cookie
+func (s *Server) clearAuthCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     authCookieName,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   r.TLS != nil,
+		MaxAge:   -1,
+	})
+}
+
 func (s *Server) extractToken(r *http.Request) string {
 	authHdr := r.Header.Get("Authorization")
 	if strings.HasPrefix(authHdr, "Bearer ") {
 		return strings.TrimSpace(strings.TrimPrefix(authHdr, "Bearer "))
 	}
-	if cookie, err := r.Cookie("music_toolkit_token"); err == nil && cookie.Value != "" {
+	if cookie, err := r.Cookie(authCookieName); err == nil && cookie.Value != "" {
 		return cookie.Value
 	}
 	if tok := r.URL.Query().Get("token"); tok != "" {
@@ -1780,12 +1812,12 @@ func (s *Server) getSessionFromRequest(r *http.Request) (string, bool) {
 	return sess.Username, true
 }
 
+// isSystemUnlocked 判断当前请求是否已通过本地管理员认证。
+// 飞牛 NAS 连接仅作为音乐服务凭据，不参与系统解锁判定，
+// 因此未登录本地账号的请求（含匿名请求）一律视为锁定。
 func (s *Server) isSystemUnlocked(r *http.Request) (bool, string, string) {
 	localUser, localAuth := s.getSessionFromRequest(r)
-	feiniuConnected := s.feiniuClient.IsConnected()
-	feiniuUser := s.feiniuClient.GetUsername()
-
-	return localAuth || feiniuConnected, localUser, feiniuUser
+	return localAuth, localUser, s.feiniuClient.GetUsername()
 }
 
 func (s *Server) requireSystemUnlock(next http.HandlerFunc) http.HandlerFunc {
@@ -1793,7 +1825,7 @@ func (s *Server) requireSystemUnlock(next http.HandlerFunc) http.HandlerFunc {
 		unlocked, _, _ := s.isSystemUnlocked(r)
 		if !unlocked {
 			writeJSON(w, http.StatusUnauthorized, map[string]any{
-				"error": "系统尚未解锁，请先登录本地账号或连接飞牛音乐",
+				"error": "系统尚未解锁，请先登录本地管理员账号",
 				"code":  401,
 			})
 			return
@@ -1810,7 +1842,7 @@ func (s *Server) handleAuthStatus(w http.ResponseWriter, r *http.Request) {
 	localUser, localAuth := s.getSessionFromRequest(r)
 	feiniuConnected := s.feiniuClient.IsConnected()
 	feiniuUser := s.feiniuClient.GetUsername()
-	unlocked := localAuth || feiniuConnected
+	unlocked := localAuth
 
 	writeJSON(w, http.StatusOK, map[string]any{
 		"initialized":         initialized,
@@ -1872,6 +1904,7 @@ func (s *Server) handleAuthInit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := s.createSession(user.Username)
+	s.setAuthCookie(w, r, token)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":  true,
 		"token":    token,
@@ -1900,6 +1933,7 @@ func (s *Server) handleAuthLogin(w http.ResponseWriter, r *http.Request) {
 	}
 
 	token := s.createSession(user.Username)
+	s.setAuthCookie(w, r, token)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success":  true,
 		"token":    token,
@@ -1912,6 +1946,7 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	if token != "" {
 		s.removeSession(token)
 	}
+	s.clearAuthCookie(w, r)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"success": true,
 	})
