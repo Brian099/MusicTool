@@ -1593,6 +1593,19 @@ function initPlaylistExtractor() {
             document.getElementById('playlist-result-title').textContent = data.title || '歌单歌曲列表';
             document.getElementById('playlist-result-subtitle').textContent = `共解析出 ${data.song_count} 首歌曲 (${platformNames[data.platform] || data.platform})`;
 
+            // 歌单封面预览（网易云 / QQ 音乐支持，汽水音乐暂无）
+            const coverEl = document.getElementById('playlist-result-cover');
+            if (coverEl) {
+                if (data.cover_url) {
+                    coverEl.src = data.cover_url;
+                    coverEl.style.display = 'block';
+                    coverEl.title = '歌单封面，导入飞牛时将自动上传';
+                } else {
+                    coverEl.removeAttribute('src');
+                    coverEl.style.display = 'none';
+                }
+            }
+
             renderPlaylistSongs();
             showToast(`成功解析歌单「${data.title}」，共 ${data.song_count} 首歌曲！`, 'success');
 
@@ -2459,6 +2472,7 @@ function initFeiNiuImportModal() {
             const payload = {
                 name: targetName,
                 playlist_guid: targetGuid,
+                cover_url: (state.playlistRawResult && state.playlistRawResult.cover_url) || '',
                 songs: state.playlistSongs
             };
 
@@ -2491,6 +2505,23 @@ function initFeiNiuImportModal() {
                     document.getElementById('fn-rep-unmatched').textContent = rep.unmatched_count;
 
                     showToast(`歌单「${rep.playlist_name}」导入完成！已成功匹配入库 ${rep.matched_count} 首`, 'success');
+
+                    // 封面上传结果
+                    const coverStatus = document.getElementById('fn-cover-status');
+                    if (coverStatus) {
+                        if (rep.cover_uploaded) {
+                            coverStatus.className = '';
+                            coverStatus.style.color = 'var(--color-success)';
+                            coverStatus.textContent = '🖼️ 歌单封面已上传并写入飞牛 NAS';
+                        } else if (rep.cover_error) {
+                            coverStatus.className = '';
+                            coverStatus.style.color = 'var(--color-danger)';
+                            coverStatus.textContent = `🖼️ 封面未导入：${rep.cover_error}`;
+                        } else {
+                            coverStatus.className = 'hidden';
+                            coverStatus.textContent = '';
+                        }
+                    }
 
                     // 未匹配歌曲清单
                     const unmatchedBox = document.getElementById('fn-unmatched-box');

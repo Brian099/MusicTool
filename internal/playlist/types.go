@@ -22,6 +22,7 @@ type ParseResult struct {
 	Platform   string     `json:"platform"` // netease, qq, qishui
 	SourceURL  string     `json:"source_url"`
 	Title      string     `json:"title"`
+	CoverURL   string     `json:"cover_url,omitempty"` // 歌单封面图地址（网易云 / QQ 音乐支持）
 	SongCount  int        `json:"song_count"`
 	Songs      []SongItem `json:"songs"`
 	TextList   []string   `json:"text_list"` // 纯文本列表（便于直接复制）

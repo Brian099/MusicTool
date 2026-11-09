@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strings"
@@ -399,6 +400,93 @@ func (c *Client) doRequestInternal(ctx context.Context, method, path string, bod
 	}
 
 	return nil
+}
+
+// UploadPlaylistCover 上传歌单封面图片，返回飞牛侧生成的 coverId（形如 playlist_xxx）
+func (c *Client) UploadPlaylistCover(ctx context.Context, data []byte, filename string) (string, error) {
+	return c.uploadCover(ctx, "static/cover/playlist", data, filename, 0)
+}
+
+// uploadCover 以 multipart/form-data 上传封面，复用 Cookie 鉴权与 401 自动重连逻辑
+func (c *Client) uploadCover(ctx context.Context, path string, data []byte, filename string, retryCount int) (string, error) {
+	c.mu.RLock()
+	serverURL := c.serverURL
+	token := c.userToken
+	accessCode := c.accessCode
+	c.mu.RUnlock()
+
+	if serverURL == "" {
+		return "", errors.New("未配置飞牛 NAS 服务端地址")
+	}
+	if len(data) == 0 {
+		return "", errors.New("封面图片内容为空")
+	}
+	if filename == "" {
+		filename = "cover.jpg"
+	}
+
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	part, err := mw.CreateFormFile("file", filename)
+	if err != nil {
+		return "", fmt.Errorf("构建封面表单失败: %w", err)
+	}
+	if _, err := part.Write(data); err != nil {
+		return "", fmt.Errorf("写入封面数据失败: %w", err)
+	}
+	if err := mw.Close(); err != nil {
+		return "", fmt.Errorf("结束封面表单失败: %w", err)
+	}
+
+	fullURL := fmt.Sprintf("%s/music/api/v1/%s", serverURL, strings.TrimPrefix(path, "/"))
+	httpReq, err := http.NewRequestWithContext(ctx, "POST", fullURL, &buf)
+	if err != nil {
+		return "", fmt.Errorf("create http request: %w", err)
+	}
+	httpReq.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		httpReq.Header.Set("Cookie", fmt.Sprintf("music-token=%s", token))
+	}
+	if accessCode != "" {
+		httpReq.Header.Set("x-access-code", base64.StdEncoding.EncodeToString([]byte(accessCode)))
+		httpReq.Header.Set("x-access-source", "app")
+	}
+
+	resp, err := c.httpClient.Do(httpReq)
+	if err != nil {
+		return "", fmt.Errorf("upload feiniu cover failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("read feiniu cover response: %w", err)
+	}
+
+	var parsed FeiNiuResponse[struct {
+		CoverID string `json:"coverId"`
+	}]
+	_ = json.Unmarshal(bodyBytes, &parsed)
+
+	isUnauthorized := resp.StatusCode == http.StatusUnauthorized || parsed.Code == 401 ||
+		strings.Contains(strings.ToLower(parsed.Msg), "invalid token")
+	if isUnauthorized {
+		if retryCount >= 1 {
+			return "", errors.New("飞牛 NAS 登录态已失效且自动重连失败，请重新配置密码")
+		}
+		if err := c.ensureLogin(ctx); err != nil {
+			return "", fmt.Errorf("登录失效且重连失败: %w", err)
+		}
+		return c.uploadCover(ctx, path, data, filename, retryCount+1)
+	}
+
+	if parsed.Code != 0 {
+		return "", fmt.Errorf("上传歌单封面失败: %s (code %d)", parsed.Msg, parsed.Code)
+	}
+	if parsed.Data.CoverID == "" {
+		return "", fmt.Errorf("上传歌单封面未返回 coverId (body: %s)", string(bodyBytes))
+	}
+	return parsed.Data.CoverID, nil
 }
 
 // GetPlaylists 获取歌单列表（支持分页）

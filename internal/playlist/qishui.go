@@ -16,7 +16,9 @@ var (
 	urlRegex         = regexp.MustCompile(`https?://[a-zA-Z0-9./?=&_%-]+`)
 )
 
-func parseQiShuiMusic(link string, detailed bool) (string, []SongItem, error) {
+// parseQiShuiMusic 解析汽水音乐歌单，返回 (标题, 封面地址, 歌曲列表, 错误)
+// 汽水音乐分享页目前不提供歌单封面，封面地址固定为空。
+func parseQiShuiMusic(link string, detailed bool) (string, string, []SongItem, error) {
 	// 1. 提取短链接
 	if match := qishuiShareRegex.FindString(link); match != "" {
 		link = match
@@ -36,19 +38,19 @@ func parseQiShuiMusic(link string, detailed bool) (string, []SongItem, error) {
 
 	req, err := http.NewRequest("GET", link, nil)
 	if err != nil {
-		return "", nil, fmt.Errorf("创建汽水音乐请求失败: %w", err)
+		return "", "", nil, fmt.Errorf("创建汽水音乐请求失败: %w", err)
 	}
 	req.Header.Set("User-Agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", nil, fmt.Errorf("请求汽水音乐页面失败: %w", err)
+		return "", "", nil, fmt.Errorf("请求汽水音乐页面失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	doc, err := goquery.NewDocumentFromReader(resp.Body)
 	if err != nil {
-		return "", nil, fmt.Errorf("解析汽水音乐网页失败: %w", err)
+		return "", "", nil, fmt.Errorf("解析汽水音乐网页失败: %w", err)
 	}
 
 	// 2. 提取歌单标题与作者
@@ -97,8 +99,8 @@ func parseQiShuiMusic(link string, detailed bool) (string, []SongItem, error) {
 	})
 
 	if len(songs) == 0 {
-		return "", nil, errors.New("未能从汽水音乐页面解析出歌曲列表，请检查链接是否为有效公开歌单")
+		return "", "", nil, errors.New("未能从汽水音乐页面解析出歌曲列表，请检查链接是否为有效公开歌单")
 	}
 
-	return title, songs, nil
+	return title, "", songs, nil
 }

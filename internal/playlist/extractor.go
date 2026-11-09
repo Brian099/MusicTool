@@ -45,19 +45,20 @@ func (e *Extractor) Parse(req ParseRequest) (*ParseResult, error) {
 
 	var platform string
 	var title string
+	var coverURL string
 	var songs []SongItem
 	var err error
 
 	switch {
 	case neteaseURLRegx.MatchString(link):
 		platform = "netease"
-		title, songs, err = parseNetEase(link, req.Detailed)
+		title, coverURL, songs, err = parseNetEase(link, req.Detailed)
 	case qqMusicURLRegx.MatchString(link):
 		platform = "qq"
-		title, songs, err = parseQQMusic(link, req.Detailed)
+		title, coverURL, songs, err = parseQQMusic(link, req.Detailed)
 	case qishuiURLRegx.MatchString(link):
 		platform = "qishui"
-		title, songs, err = parseQiShuiMusic(link, req.Detailed)
+		title, coverURL, songs, err = parseQiShuiMusic(link, req.Detailed)
 	default:
 		return nil, errors.New("未识别的音乐链接格式，目前支持网易云音乐、QQ音乐与汽水音乐歌单")
 	}
@@ -92,6 +93,7 @@ func (e *Extractor) Parse(req ParseRequest) (*ParseResult, error) {
 		Platform:  platform,
 		SourceURL: link,
 		Title:     title,
+		CoverURL:  coverURL,
 		SongCount: len(songs),
 		Songs:     songs,
 		TextList:  textList,

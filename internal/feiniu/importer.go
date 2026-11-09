@@ -320,13 +320,29 @@ func (imp *Importer) ImportPlaylist(ctx context.Context, req ImportPlaylistReque
 
 	targetGUID := req.PlaylistGUID
 	targetName := strings.TrimSpace(req.Name)
+	coverUploaded := false
+	coverErrMsg := ""
 
-	// 若未指定现有歌单，则创建新歌单
+	// 若未指定现有歌单，则创建新歌单（并把原歌单封面直传到飞牛）
 	if targetGUID == "" {
 		if targetName == "" {
 			targetName = fmt.Sprintf("导入歌单 %s", time.Now().Format("2006-01-02 15:04"))
 		}
-		newPl, err := imp.client.CreatePlaylist(ctx, targetName, "")
+
+		coverID := ""
+		if coverURL := strings.TrimSpace(req.CoverURL); coverURL != "" {
+			data, ext, dlErr := downloadCoverImage(ctx, coverURL)
+			if dlErr != nil {
+				coverErrMsg = dlErr.Error()
+			} else if id, upErr := imp.client.UploadPlaylistCover(ctx, data, "playlist_cover."+ext); upErr != nil {
+				coverErrMsg = upErr.Error()
+			} else {
+				coverID = id
+				coverUploaded = true
+			}
+		}
+
+		newPl, err := imp.client.CreatePlaylist(ctx, targetName, coverID)
 		if err != nil {
 			return nil, fmt.Errorf("创建飞牛歌单失败: %w", err)
 		}
@@ -391,10 +407,12 @@ func (imp *Importer) ImportPlaylist(ctx context.Context, req ImportPlaylistReque
 	wg.Wait()
 
 	result := &ImportPlaylistResult{
-		PlaylistGUID: targetGUID,
-		PlaylistName: targetName,
-		Total:        totalSongs,
-		Results:      results,
+		PlaylistGUID:  targetGUID,
+		PlaylistName:  targetName,
+		Total:         totalSongs,
+		CoverUploaded: coverUploaded,
+		CoverError:    coverErrMsg,
+		Results:       results,
 	}
 
 	var matchedGUIDs []string

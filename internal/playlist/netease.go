@@ -22,10 +22,11 @@ var (
 type neteasePlaylistResp struct {
 	Code     int `json:"code"`
 	Playlist struct {
-		ID         int64  `json:"id"`
-		Name       string `json:"name"`
-		TrackCount int    `json:"trackCount"`
-		TrackIDs   []struct {
+		ID          int64  `json:"id"`
+		Name        string `json:"name"`
+		CoverImgURL string `json:"coverImgUrl"`
+		TrackCount  int    `json:"trackCount"`
+		TrackIDs    []struct {
 			ID int64 `json:"id"`
 		} `json:"trackIds"`
 	} `json:"playlist"`
@@ -43,11 +44,11 @@ type neteaseSongsResp struct {
 	} `json:"songs"`
 }
 
-// parseNetEase 解析网易云歌单
-func parseNetEase(link string, detailed bool) (string, []SongItem, error) {
+// parseNetEase 解析网易云歌单，返回 (标题, 封面地址, 歌曲列表, 错误)
+func parseNetEase(link string, detailed bool) (string, string, []SongItem, error) {
 	playlistID, err := extractNetEaseID(link)
 	if err != nil {
-		return "", nil, fmt.Errorf("解析网易云歌单ID失败: %w", err)
+		return "", "", nil, fmt.Errorf("解析网易云歌单ID失败: %w", err)
 	}
 
 	httpClient := &http.Client{Timeout: 15 * time.Second}
@@ -58,37 +59,38 @@ func parseNetEase(link string, detailed bool) (string, []SongItem, error) {
 
 	req, err := http.NewRequest("POST", "https://music.163.com/api/v6/playlist/detail", strings.NewReader(reqData.Encode()))
 	if err != nil {
-		return "", nil, err
+		return "", "", nil, err
 	}
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return "", nil, fmt.Errorf("请求网易云接口失败: %w", err)
+		return "", "", nil, fmt.Errorf("请求网易云接口失败: %w", err)
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return "", nil, fmt.Errorf("读取网易云响应失败: %w", err)
+		return "", "", nil, fmt.Errorf("读取网易云响应失败: %w", err)
 	}
 
 	var pResp neteasePlaylistResp
 	if err := json.Unmarshal(bodyBytes, &pResp); err != nil {
-		return "", nil, fmt.Errorf("解析网易云响应失败: %w", err)
+		return "", "", nil, fmt.Errorf("解析网易云响应失败: %w", err)
 	}
 
 	if pResp.Code == 401 {
-		return "", nil, errors.New("无权限访问该歌单（私密歌单不可见）")
+		return "", "", nil, errors.New("无权限访问该歌单（私密歌单不可见）")
 	}
 	if pResp.Code != 200 || pResp.Playlist.ID == 0 {
-		return "", nil, fmt.Errorf("未找到网易云歌单数据 (code: %d)", pResp.Code)
+		return "", "", nil, fmt.Errorf("未找到网易云歌单数据 (code: %d)", pResp.Code)
 	}
 
 	trackIDs := pResp.Playlist.TrackIDs
+	coverURL := normalizeCoverURL(pResp.Playlist.CoverImgURL)
 	if len(trackIDs) == 0 {
-		return pResp.Playlist.Name, []SongItem{}, nil
+		return pResp.Playlist.Name, coverURL, []SongItem{}, nil
 	}
 
 	// 2. 分块批量拉取歌曲详情 (每批 400 首)
@@ -171,7 +173,7 @@ func parseNetEase(link string, detailed bool) (string, []SongItem, error) {
 	wg.Wait()
 	close(errCh)
 	if err, ok := <-errCh; ok && err != nil {
-		return "", nil, fmt.Errorf("批量拉取网易云歌曲详情失败: %w", err)
+		return "", "", nil, fmt.Errorf("批量拉取网易云歌曲详情失败: %w", err)
 	}
 
 	// 3. 按照原歌单顺序还原列表
@@ -188,7 +190,7 @@ func parseNetEase(link string, detailed bool) (string, []SongItem, error) {
 		}
 	}
 
-	return pResp.Playlist.Name, songs, nil
+	return pResp.Playlist.Name, coverURL, songs, nil
 }
 
 // extractNetEaseID 从短链或标准链接提取歌单 ID

@@ -34,6 +34,7 @@ type qqMusicFullResp struct {
 			Dirinfo struct {
 				Title   string `json:"title"`
 				Songnum int    `json:"songnum"`
+				Picurl  string `json:"picurl"`
 			} `json:"dirinfo"`
 			Songlist []struct {
 				Name   string `json:"name"`
@@ -45,24 +46,26 @@ type qqMusicFullResp struct {
 	} `json:"req_0"`
 }
 
-func parseQQMusic(link string, detailed bool) (string, []SongItem, error) {
+// parseQQMusic 解析 QQ 音乐歌单，返回 (标题, 封面地址, 歌曲列表, 错误)
+func parseQQMusic(link string, detailed bool) (string, string, []SongItem, error) {
 	tid, err := extractQQPlaylistID(link)
 	if err != nil || tid == 0 {
-		return "", nil, fmt.Errorf("解析QQ音乐歌单ID失败: %w", err)
+		return "", "", nil, fmt.Errorf("解析QQ音乐歌单ID失败: %w", err)
 	}
 
 	// 1. 获取第一页并得到总数
 	firstPageData, err := fetchQQPlaylistPage(tid, 0, qqMusicPageSize)
 	if err != nil {
-		return "", nil, fmt.Errorf("获取QQ音乐歌单第一页失败: %w", err)
+		return "", "", nil, fmt.Errorf("获取QQ音乐歌单第一页失败: %w", err)
 	}
 
 	var firstResp qqMusicFullResp
 	if err := json.Unmarshal(firstPageData, &firstResp); err != nil {
-		return "", nil, fmt.Errorf("解析QQ音乐数据失败: %w", err)
+		return "", "", nil, fmt.Errorf("解析QQ音乐数据失败: %w", err)
 	}
 
 	title := firstResp.Req0.Data.Dirinfo.Title
+	coverURL := normalizeCoverURL(firstResp.Req0.Data.Dirinfo.Picurl)
 	totalSongs := firstResp.Req0.Data.Dirinfo.Songnum
 	if totalSongs == 0 {
 		totalSongs = len(firstResp.Req0.Data.Songlist)
@@ -124,7 +127,7 @@ func parseQQMusic(link string, detailed bool) (string, []SongItem, error) {
 		title = fmt.Sprintf("QQ音乐歌单_%d", tid)
 	}
 
-	return title, songItems, nil
+	return title, coverURL, songItems, nil
 }
 
 func fetchQQPlaylistPage(tid int64, songBegin, songNum int) ([]byte, error) {

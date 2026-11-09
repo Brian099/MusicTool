@@ -842,9 +842,12 @@
                         <!-- 歌曲列表卡片 -->
                         <div class="table-panel glass-panel">
                             <div class="table-header">
-                                <div>
-                                    <h3 id="playlist-result-title">解析歌曲列表</h3>
-                                    <span class="table-subtitle" id="playlist-result-subtitle">请输入链接提取歌单或从下方历史载入</span>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <img id="playlist-result-cover" alt="歌单封面" style="display: none; width: 44px; height: 44px; border-radius: 6px; object-fit: cover; flex-shrink: 0;">
+                                    <div>
+                                        <h3 id="playlist-result-title">解析歌曲列表</h3>
+                                        <span class="table-subtitle" id="playlist-result-subtitle">请输入链接提取歌单或从下方历史载入</span>
+                                    </div>
                                 </div>
                                 <div class="table-actions">
                                     <input type="text" id="pl-filter-query" class="input-search" placeholder="搜索歌曲名或歌手...">
@@ -1244,6 +1247,8 @@
                             <span class="stat-value" id="fn-rep-unmatched" style="font-size: 18px; color: var(--color-danger);">0</span>
                         </div>
                     </div>
+
+                    <div id="fn-cover-status" class="hidden" style="font-size: 12px; margin-bottom: 10px; line-height: 1.6;"></div>
 
                     <div id="fn-unmatched-box" class="hidden">
                         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">

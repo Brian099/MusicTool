@@ -244,6 +244,7 @@ type PlaylistTracksActionReq struct {
 type ImportPlaylistRequest struct {
 	Name         string              `json:"name"`          // 歌单名称（若为空且新建则使用原歌单名）
 	PlaylistGUID string              `json:"playlist_guid"` // 目标歌单 GUID（若为空则自动新建同名歌单）
+	CoverURL     string              `json:"cover_url"`     // 原歌单封面地址（网易云 / QQ 音乐），新建歌单时自动上传为飞牛封面
 	Songs        []playlist.SongItem `json:"songs"`         // 待导入歌曲列表
 }
 
@@ -267,6 +268,8 @@ type ImportPlaylistResult struct {
 	Total          int                 `json:"total"`
 	MatchedCount   int                 `json:"matched_count"`
 	UnmatchedCount int                 `json:"unmatched_count"`
+	CoverUploaded  bool                `json:"cover_uploaded"`         // 封面是否成功上传并写入歌单
+	CoverError     string              `json:"cover_error,omitempty"`  // 封面上传失败原因（不影响歌曲导入）
 	Results        []ImportMatchItem   `json:"results"`
 	UnmatchedSongs []playlist.SongItem `json:"unmatched_songs"` // 未匹配歌曲清单（便于一键复制补全）
 }
