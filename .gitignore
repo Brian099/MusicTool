@@ -28,4 +28,7 @@ GoMusic-main/
 飞牛应用/app/music-toolkit-linux-*
 collapse.png
 
+# 飞牛安装包改由 GitHub Release 附件分发，不再入库（单包约 66MB）
+飞牛应用/music-toolkit.fpk
+
 
