@@ -69,3 +69,22 @@ cd ..
 - **数据库与输出目录**：`DB_PATH`、`OUTPUT_DIR` 都位于应用数据目录（`TRIM_PKGVAR`）下，与音乐库分离，不需要额外授权。
 - **临时指定路径**：也可以在 Web 界面各面板的「音乐目录」输入框直接填绝对路径（如 `/vol1/1000/Music`），仅对该次扫描生效，不改变全局挂载。
 - **确认是否生效**：顶栏「音乐库」状态标签变绿并显示目录数量即为挂载成功，悬停可查看每个目录的文件数与占用；仍然失败时查看应用数据目录下的 `info.log` 启动日志。
+
+---
+
+## 卸载与数据保留
+
+应用数据（AcoustID 声学指纹缓存、格式检测记录、真假无损记录、歌单提取历史、飞牛连接凭据、管理员账号）统一保存在应用数据目录 `@appdata/music-toolkit` 下的 `music_toolkit.db`。
+
+卸载时会弹出 `wizard/uninstall` 询问是否删除数据，**默认保留**：
+
+| 选择 | 行为 |
+| :--- | :--- |
+| 关闭「同时删除应用数据」（默认） | 只卸载程序，保留 `@appdata/music-toolkit`；重新安装后指纹缓存、账号、飞牛凭据全部还在 |
+| 开启「同时删除应用数据」 | 卸载后由 `cmd/uninstall_callback` 删除整个应用数据目录，**不可恢复** |
+
+实现要点：
+
+- `wizard/uninstall` 的 `switch` 字段 `wizard_delete_data` 会以同名环境变量传给生命周期脚本
+- `cmd/uninstall_callback` 仅在取值为 `true/1/yes/on` 时才执行删除，并带有安全护栏：`TRIM_PKGVAR` 必须非空、存在且路径匹配 `*/@appdata/*`，否则直接退出，杜绝误删
+- 停止进程仍由 `cmd/uninstall_init` 负责，删除动作放在 `uninstall_callback`（程序文件清理之后）

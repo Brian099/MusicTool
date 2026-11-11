@@ -1,2 +1,24 @@
 #!/bin/bash
+# 卸载清理后执行：按 wizard/uninstall 中的选择决定是否删除应用数据。
+# 默认保留（wizard_delete_data 未设置或为假值时直接退出），
+# 避免用户误卸载后丢失声学指纹缓存、管理员账号与飞牛连接凭据。
+
+DELETE_DATA=$(echo "${wizard_delete_data:-false}" | tr '[:upper:]' '[:lower:]')
+
+case "${DELETE_DATA}" in
+  true | 1 | yes | on) ;;
+  *) exit 0 ;;
+esac
+
+# 安全护栏：变量必须存在、是目录，且确实位于 @appdata 下，才允许删除
+if [ -z "${TRIM_PKGVAR}" ] || [ ! -d "${TRIM_PKGVAR}" ]; then
+  exit 0
+fi
+
+case "${TRIM_PKGVAR}" in
+  */@appdata/*) ;;
+  *) exit 0 ;;
+esac
+
+rm -rf "${TRIM_PKGVAR}"
 exit 0

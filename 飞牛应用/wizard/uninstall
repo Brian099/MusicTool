@@ -1,0 +1,21 @@
+[
+  {
+    "stepTitle": "卸载音乐工具箱",
+    "items": [
+      {
+        "type": "tips",
+        "helpText": "应用数据保存在应用数据目录（@appdata/music-toolkit）中，包含：AcoustID 声学指纹缓存、格式检测记录、真假无损鉴别记录、歌单提取历史、飞牛 NAS 连接凭据与管理员账号。"
+      },
+      {
+        "type": "switch",
+        "field": "wizard_delete_data",
+        "label": "同时删除应用数据",
+        "initValue": "false"
+      },
+      {
+        "type": "tips",
+        "helpText": "关闭（默认）：保留全部数据，重新安装后可继续使用已算好的指纹缓存，无需重建管理员账号或重新连接飞牛 NAS。开启：永久删除且无法恢复。"
+      }
+    ]
+  }
+]
