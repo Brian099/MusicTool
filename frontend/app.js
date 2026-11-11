@@ -41,6 +41,7 @@ const API = {
     feiniuPlaylistDelete: '/api/feiniu/playlist/delete',
     feiniuPlaylistAddTracks: '/api/feiniu/playlist/add-tracks',
     feiniuPlaylistRemoveTracks: '/api/feiniu/playlist/remove-tracks',
+    feiniuPlaylistCover: '/api/feiniu/playlist/cover',
     feiniuPlaylistPurge: '/api/feiniu/playlist/purge',
     feiniuPlaylistImport: '/api/feiniu/playlist/import',
     feiniuCover: '/api/feiniu/cover',
@@ -2181,7 +2182,7 @@ function renderFeiNiuPlaylists(playlists) {
                     <div class="playlist-card-time">${timeStr ? '更新于 ' + timeStr : ''}</div>
                     <div class="playlist-card-actions" onclick="event.stopPropagation();">
                         <button class="btn-card-action" onclick="viewFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}')" title="查看歌曲">📂</button>
-                        <button class="btn-card-action" onclick="editFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}')" title="重命名">✏️</button>
+                        <button class="btn-card-action" onclick="editFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}', '${escapeHtml(p.coverId || '')}')" title="编辑名称与封面">✏️</button>
                         <button class="btn-card-action" style="color: var(--color-danger);" onclick="deleteFeiNiuPlaylist('${escapeHtml(p.guid)}', '${safeName}')" title="删除歌单">🗑️</button>
                     </div>
                 </div>
@@ -2278,10 +2279,43 @@ window.viewFeiNiuPlaylist = async function(guid, name) {
     }
 };
 
-window.editFeiNiuPlaylist = function(guid, name) {
+// 编辑歌单弹窗的封面选择状态
+let pendingCoverFile = null;
+let pendingCoverObjectURL = null;
+let currentCoverId = '';
+
+function resetRenameCoverPreview(coverId) {
+    if (pendingCoverObjectURL) {
+        URL.revokeObjectURL(pendingCoverObjectURL);
+        pendingCoverObjectURL = null;
+    }
+    pendingCoverFile = null;
+    currentCoverId = coverId || '';
+
+    const input = document.getElementById('fn-rename-cover-file');
+    const img = document.getElementById('fn-rename-cover-preview');
+    const placeholder = document.getElementById('fn-rename-cover-placeholder');
+    const clearBtn = document.getElementById('btn-fn-rename-cover-clear');
+    if (input) input.value = '';
+    if (clearBtn) clearBtn.style.display = 'none';
+    if (!img || !placeholder) return;
+
+    if (currentCoverId) {
+        img.src = `${API.feiniuCover}?coverId=${encodeURIComponent(currentCoverId)}&size=300`;
+        img.style.display = 'block';
+        placeholder.style.display = 'none';
+    } else {
+        img.removeAttribute('src');
+        img.style.display = 'none';
+        placeholder.style.display = 'block';
+    }
+}
+
+window.editFeiNiuPlaylist = function(guid, name, coverId) {
     const modal = document.getElementById('fn-rename-modal');
     document.getElementById('fn-rename-guid').value = guid;
     document.getElementById('fn-rename-name').value = name;
+    resetRenameCoverPreview(coverId);
     modal.classList.remove('hidden');
 };
 
@@ -2290,33 +2324,103 @@ function initFeiNiuRenameModal() {
     const closeBtn = document.getElementById('btn-fn-rename-close');
     const cancelBtn = document.getElementById('btn-fn-rename-cancel');
     const confirmBtn = document.getElementById('btn-fn-rename-confirm');
+    const fileInput = document.getElementById('fn-rename-cover-file');
+    const pickBtn = document.getElementById('btn-fn-rename-cover-pick');
+    const clearBtn = document.getElementById('btn-fn-rename-cover-clear');
 
-    const closeModal = () => modal.classList.add('hidden');
+    const closeModal = () => {
+        resetRenameCoverPreview('');
+        modal.classList.add('hidden');
+    };
     if (closeBtn) closeBtn.addEventListener('click', closeModal);
     if (cancelBtn) cancelBtn.addEventListener('click', closeModal);
+
+    if (pickBtn && fileInput) {
+        pickBtn.addEventListener('click', () => fileInput.click());
+        fileInput.addEventListener('change', () => {
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) return;
+            if (!/^image\//.test(file.type)) {
+                showToast('请选择图片文件', 'warning');
+                fileInput.value = '';
+                return;
+            }
+            if (file.size > 8 * 1024 * 1024) {
+                showToast('图片超过 8MB，请先压缩后再上传', 'warning');
+                fileInput.value = '';
+                return;
+            }
+            if (pendingCoverObjectURL) URL.revokeObjectURL(pendingCoverObjectURL);
+            pendingCoverFile = file;
+            pendingCoverObjectURL = URL.createObjectURL(file);
+
+            const img = document.getElementById('fn-rename-cover-preview');
+            const placeholder = document.getElementById('fn-rename-cover-placeholder');
+            img.src = pendingCoverObjectURL;
+            img.style.display = 'block';
+            placeholder.style.display = 'none';
+            if (clearBtn) clearBtn.style.display = 'inline-flex';
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', () => {
+            if (fileInput) fileInput.value = '';
+            resetRenameCoverPreview(currentCoverId);
+        });
+    }
 
     if (confirmBtn) {
         confirmBtn.addEventListener('click', async () => {
             const guid = document.getElementById('fn-rename-guid').value;
             const name = document.getElementById('fn-rename-name').value.trim();
-            if (!name) return;
+            if (!name) {
+                showToast('请输入歌单名称', 'warning');
+                return;
+            }
+
+            confirmBtn.disabled = true;
+            const originalText = confirmBtn.textContent;
+            confirmBtn.textContent = pendingCoverFile ? '⏳ 上传封面中...' : '⏳ 保存中...';
 
             try {
-                const res = await fetch(API.feiniuPlaylistEdit, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ guid, name })
-                });
-                const result = await res.json();
-                if (result.success) {
-                    showToast('歌单已成功重命名', 'success');
+                let result;
+                if (pendingCoverFile) {
+                    // 选择本地图片：走 multipart 上传，服务端上传到飞牛并写入歌单
+                    const formData = new FormData();
+                    formData.append('guid', guid);
+                    formData.append('name', name);
+                    formData.append('file', pendingCoverFile);
+                    const res = await fetch(API.feiniuPlaylistCover, { method: 'POST', body: formData });
+                    result = await res.json();
+                    if (result.success) {
+                        showToast('歌单封面已更新', 'success');
+                    } else {
+                        showToast('封面上传失败: ' + result.error, 'error');
+                    }
+                } else {
+                    const res = await fetch(API.feiniuPlaylistEdit, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ guid, name })
+                    });
+                    result = await res.json();
+                    if (result.success) {
+                        showToast('歌单已成功重命名', 'success');
+                    } else {
+                        showToast('修改失败: ' + result.error, 'error');
+                    }
+                }
+
+                if (result && result.success) {
                     closeModal();
                     loadFeiNiuPlaylists();
-                } else {
-                    showToast('修改失败: ' + result.error, 'error');
                 }
             } catch (err) {
                 showToast('请求失败: ' + err.message, 'error');
+            } finally {
+                confirmBtn.disabled = false;
+                confirmBtn.textContent = originalText;
             }
         });
     }

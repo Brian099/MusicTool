@@ -1,8 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -175,4 +177,155 @@ func mustUnmarshal(t *testing.T, raw string, target any) {
 	if err := json.Unmarshal([]byte(raw), target); err != nil {
 		t.Fatalf("解析响应失败: %v (raw=%s)", err, raw)
 	}
+}
+
+// TestUploadPlaylistCoverEndToEnd 验证「编辑歌单 → 选择本地图片 → 上传并写入封面」的完整链路
+func TestUploadPlaylistCoverEndToEnd(t *testing.T) {
+	var uploadedCover bool
+	var editBody string
+
+	fnMux := http.NewServeMux()
+	fnMux.HandleFunc("/music/api/v1/user/password-login", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"userToken": "mock-token", "username": "tester"},
+		})
+	})
+	fnMux.HandleFunc("/music/api/v1/static/cover/playlist", func(w http.ResponseWriter, r *http.Request) {
+		if err := r.ParseMultipartForm(8 << 20); err != nil {
+			t.Errorf("封面表单解析失败: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if _, _, err := r.FormFile("file"); err != nil {
+			t.Errorf("缺少 file 字段: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		uploadedCover = true
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"coverId": "playlist_uploaded_1"},
+		})
+	})
+	fnMux.HandleFunc("/music/api/v1/playlist/edit", func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		editBody = string(body)
+		_ = json.NewEncoder(w).Encode(map[string]any{"code": 0})
+	})
+	fnServer := httptest.NewServer(fnMux)
+	defer fnServer.Close()
+
+	tempDir := t.TempDir()
+	db, err := database.OpenDB(filepath.Join(tempDir, "cover_upload.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	cfg := &config.Config{MusicDir: tempDir, OutputDir: filepath.Join(tempDir, "out"), Port: 6830}
+	appServer := httptest.NewServer(server.NewServer(cfg, db, GetFrontendFileSystem()).Handler())
+	defer appServer.Close()
+
+	initRec := doJSON(t, appServer.URL+"/api/auth/init", "", `{"username":"admin","password":"pass1234"}`)
+	var initResp struct {
+		Success bool   `json:"success"`
+		Token   string `json:"token"`
+	}
+	mustUnmarshal(t, initRec, &initResp)
+	if !initResp.Success {
+		t.Fatalf("初始化管理员失败: %s", initRec)
+	}
+
+	connectBody := `{"server_url":"` + fnServer.URL + `","username":"tester","password":"123456"}`
+	if rec := doJSON(t, appServer.URL+"/api/feiniu/connect", initResp.Token, connectBody); !strings.Contains(rec, `"success":true`) {
+		t.Fatalf("连接飞牛失败: %s", rec)
+	}
+
+	// 1) 正常上传：PNG 图片 → 上传 → 写入歌单
+	rec := doMultipart(t, appServer.URL+"/api/feiniu/playlist/cover", initResp.Token,
+		map[string]string{"guid": "pl-e2e-1", "name": "我的歌单"}, "file", "cover.png", e2ePNG)
+	var uploadResp struct {
+		Success bool   `json:"success"`
+		CoverID string `json:"cover_id"`
+		Error   string `json:"error"`
+	}
+	mustUnmarshal(t, rec, &uploadResp)
+	if !uploadResp.Success {
+		t.Fatalf("封面上传失败: %s", rec)
+	}
+	if uploadResp.CoverID != "playlist_uploaded_1" {
+		t.Fatalf("cover_id 不符: %s", uploadResp.CoverID)
+	}
+	if !uploadedCover {
+		t.Fatalf("未收到封面上传请求")
+	}
+	if !strings.Contains(editBody, "playlist_uploaded_1") || !strings.Contains(editBody, "pl-e2e-1") {
+		t.Fatalf("写入歌单请求不符: %s", editBody)
+	}
+
+	// 2) 非图片内容应被拦截，且不会写入歌单
+	uploadedCover = false
+	editBody = ""
+	rec = doMultipart(t, appServer.URL+"/api/feiniu/playlist/cover", initResp.Token,
+		map[string]string{"guid": "pl-e2e-1", "name": "我的歌单"}, "file", "fake.png", []byte("<html>403 Forbidden</html>"))
+	var badResp struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	mustUnmarshal(t, rec, &badResp)
+	if badResp.Success {
+		t.Fatalf("非图片内容不应通过: %s", rec)
+	}
+	if uploadedCover || editBody != "" {
+		t.Fatalf("非图片内容不应触发上传或写入")
+	}
+
+	// 3) 缺少 guid 应报错
+	rec = doMultipart(t, appServer.URL+"/api/feiniu/playlist/cover", initResp.Token,
+		map[string]string{"name": "我的歌单"}, "file", "cover.png", e2ePNG)
+	var noGuid struct {
+		Success bool   `json:"success"`
+		Error   string `json:"error"`
+	}
+	mustUnmarshal(t, rec, &noGuid)
+	if noGuid.Success || !strings.Contains(noGuid.Error, "GUID") {
+		t.Fatalf("缺少 guid 应报错: %s", rec)
+	}
+}
+
+// doMultipart 构造 multipart/form-data 请求
+func doMultipart(t *testing.T, url, token string, fields map[string]string, fileField, fileName string, fileData []byte) string {
+	t.Helper()
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		_ = mw.WriteField(k, v)
+	}
+	part, err := mw.CreateFormFile(fileField, fileName)
+	if err != nil {
+		t.Fatalf("构造表单失败: %v", err)
+	}
+	if _, err := part.Write(fileData); err != nil {
+		t.Fatalf("写入文件失败: %v", err)
+	}
+	if err := mw.Close(); err != nil {
+		t.Fatalf("结束表单失败: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", url, &buf)
+	if err != nil {
+		t.Fatalf("构造请求失败: %v", err)
+	}
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("请求失败: %v", err)
+	}
+	defer resp.Body.Close()
+	data, _ := io.ReadAll(resp.Body)
+	return string(data)
 }

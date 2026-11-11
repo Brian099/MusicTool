@@ -37,6 +37,24 @@ func coverImageKind(data []byte) (string, bool) {
 	return "", false
 }
 
+// PrepareCoverImage 校验封面图片内容并返回用于文件名的扩展名。
+// 供下载外部封面与前端本地上传两条链路共用：大小限制 + 魔数校验，
+// 避免把防盗链错误页或非图片文件传给飞牛 NAS。
+func PrepareCoverImage(data []byte) (string, error) {
+	if len(data) == 0 {
+		return "", errors.New("封面图片内容为空")
+	}
+	if len(data) > maxCoverBytes {
+		return "", fmt.Errorf("封面图片超过 %d MB 限制", maxCoverBytes>>20)
+	}
+	ext, ok := coverImageKind(data)
+	if !ok {
+		head := string(data[:min(len(data), 40)])
+		return "", fmt.Errorf("封面内容不是有效图片（可能是防盗链错误页）: %s", strings.TrimSpace(head))
+	}
+	return ext, nil
+}
+
 // downloadCoverImage 下载外部歌单封面并校验为真实图片。
 // 防盗链、下载失败或返回 HTML 错误页时返回错误，调用方据此跳过封面上传而不影响歌单导入。
 func downloadCoverImage(ctx context.Context, rawURL string) ([]byte, string, error) {
@@ -76,14 +94,10 @@ func downloadCoverImage(ctx context.Context, rawURL string) ([]byte, string, err
 	if len(data) == 0 {
 		return nil, "", errors.New("封面数据为空")
 	}
-	if len(data) > maxCoverBytes {
-		return nil, "", fmt.Errorf("封面图片超过 %d MB 限制", maxCoverBytes>>20)
-	}
 
-	ext, ok := coverImageKind(data)
-	if !ok {
-		head := string(data[:min(len(data), 40)])
-		return nil, "", fmt.Errorf("封面内容不是有效图片（可能是防盗链错误页）: %s", strings.TrimSpace(head))
+	ext, err := PrepareCoverImage(data)
+	if err != nil {
+		return nil, "", err
 	}
 	return data, ext, nil
 }

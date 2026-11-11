@@ -158,6 +158,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/feiniu/playlist/delete", s.requireSystemUnlock(s.handleFeiNiuPlaylistDelete))
 	mux.HandleFunc("POST /api/feiniu/playlist/add-tracks", s.requireSystemUnlock(s.handleFeiNiuPlaylistAddTracks))
 	mux.HandleFunc("POST /api/feiniu/playlist/remove-tracks", s.requireSystemUnlock(s.handleFeiNiuPlaylistRemoveTracks))
+	mux.HandleFunc("POST /api/feiniu/playlist/cover", s.requireSystemUnlock(s.handleFeiNiuPlaylistCover))
 	mux.HandleFunc("POST /api/feiniu/playlist/purge", s.requireSystemUnlock(s.handleFeiNiuPlaylistPurge))
 	mux.HandleFunc("POST /api/feiniu/playlist/import", s.requireSystemUnlock(s.handleFeiNiuPlaylistImport))
 	mux.HandleFunc("GET /api/feiniu/cover", s.requireSystemUnlock(s.handleFeiNiuCover))
@@ -1604,6 +1605,66 @@ func (s *Server) handleFeiNiuPlaylistEdit(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{"success": true})
+}
+
+// handleFeiNiuPlaylistCover 接收浏览器本地上传的封面图片，上传至飞牛并写入指定歌单
+func (s *Server) handleFeiNiuPlaylistCover(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseMultipartForm(16 << 20); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success": false,
+			"error":   "解析上传内容失败: " + err.Error(),
+		})
+		return
+	}
+
+	guid := strings.TrimSpace(r.FormValue("guid"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	if guid == "" {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "缺少歌单 GUID"})
+		return
+	}
+	if name == "" {
+		// 飞牛编辑接口需要同时传名称，缺名称会导致写入失败
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "缺少歌单名称，无法写入封面"})
+		return
+	}
+
+	file, _, err := r.FormFile("file")
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "未选择封面图片"})
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, 16<<20))
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": "读取封面图片失败: " + err.Error()})
+		return
+	}
+
+	// 与外部封面下载走同一套校验：大小限制 + 文件魔数
+	ext, err := feiniu.PrepareCoverImage(data)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+
+	coverID, err := s.feiniuClient.UploadPlaylistCover(r.Context(), data, "playlist_cover."+ext)
+	if err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+
+	if err := s.feiniuClient.EditPlaylist(r.Context(), guid, name, coverID); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"success":  false,
+			"error":    "封面上传成功但写入歌单失败: " + err.Error(),
+			"cover_id": coverID,
+		})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"success": true, "cover_id": coverID})
 }
 
 func (s *Server) handleFeiNiuPlaylistDelete(w http.ResponseWriter, r *http.Request) {

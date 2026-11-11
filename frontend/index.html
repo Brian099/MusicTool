@@ -1279,6 +1279,23 @@
                     <label for="fn-rename-name">新歌单名称</label>
                     <input type="text" id="fn-rename-name" class="input-text" placeholder="输入歌单名称" required>
                 </div>
+                <div class="form-group">
+                    <label>歌单封面</label>
+                    <div style="display: flex; align-items: center; gap: 12px;">
+                        <div style="width: 72px; height: 72px; border-radius: 8px; overflow: hidden; background: var(--bg-subtle); display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+                            <img id="fn-rename-cover-preview" alt="封面预览" style="width: 100%; height: 100%; object-fit: cover; display: none;">
+                            <span id="fn-rename-cover-placeholder" style="font-size: 22px;">🎵</span>
+                        </div>
+                        <div style="flex: 1; min-width: 0;">
+                            <input type="file" id="fn-rename-cover-file" accept="image/png,image/jpeg,image/webp,image/gif" style="display: none;">
+                            <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                                <button type="button" id="btn-fn-rename-cover-pick" class="btn btn-secondary btn-sm">🖼️ 选择本地图片</button>
+                                <button type="button" id="btn-fn-rename-cover-clear" class="btn btn-secondary btn-sm" style="display: none;">撤销</button>
+                            </div>
+                            <div class="input-hint" style="margin-top: 6px;">支持 JPG / PNG / WEBP / GIF，最大 8MB。保存后上传至飞牛 NAS 并替换当前封面。</div>
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="modal-footer">
                 <button id="btn-fn-rename-cancel" class="btn btn-secondary btn-sm">取消</button>
