@@ -77,6 +77,7 @@ type PlaylistHistoryRecord struct {
 	Platform  string `json:"platform"`
 	SourceURL string `json:"source_url"`
 	Title     string `json:"title"`
+	CoverURL  string `json:"cover_url"`
 	SongCount int    `json:"song_count"`
 	SongsJSON string `json:"songs_json"`
 	CreatedAt int64  `json:"created_at"`
@@ -199,6 +200,7 @@ func (d *DB) initSchema() error {
 		platform TEXT,
 		source_url TEXT,
 		title TEXT,
+		cover_url TEXT,
 		song_count INTEGER,
 		songs_json TEXT,
 		created_at INTEGER
@@ -226,6 +228,48 @@ func (d *DB) initSchema() error {
 	);
 	`
 	_, err := d.db.Exec(schema)
+	if err != nil {
+		return err
+	}
+	// 轻量迁移：CREATE TABLE IF NOT EXISTS 不会修改已存在的表，
+	// 老版本升级上来时需要手动补列，否则读写会因列缺失失败。
+	// 带 DEFAULT '' 让历史存量行补上空字符串，避免 NULL 扫描进 string 报错。
+	return d.ensureColumn("playlist_history", "cover_url", "TEXT DEFAULT ''")
+}
+
+// ensureColumn 在列不存在时执行 ALTER TABLE 添加；已存在则直接返回。
+func (d *DB) ensureColumn(table, column, colType string) error {
+	rows, err := d.db.Query("PRAGMA table_info(" + table + ")")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	found := false
+	for rows.Next() {
+		var (
+			cid       int
+			name      string
+			ctype     string
+			notNull   int
+			defaultV  any
+			primaryK  int
+		)
+		if err := rows.Scan(&cid, &name, &ctype, &notNull, &defaultV, &primaryK); err != nil {
+			return err
+		}
+		if name == column {
+			found = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if found {
+		return nil
+	}
+
+	_, err = d.db.Exec(fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, colType))
 	return err
 }
 
@@ -520,9 +564,9 @@ func (d *DB) SavePlaylistHistory(ctx context.Context, r *PlaylistHistoryRecord) 
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	query := `INSERT INTO playlist_history (platform, source_url, title, song_count, songs_json, created_at)
-	          VALUES (?, ?, ?, ?, ?, ?)`
-	res, err := d.db.ExecContext(ctx, query, r.Platform, r.SourceURL, r.Title, r.SongCount, r.SongsJSON, r.CreatedAt)
+	query := `INSERT INTO playlist_history (platform, source_url, title, cover_url, song_count, songs_json, created_at)
+	          VALUES (?, ?, ?, ?, ?, ?, ?)`
+	res, err := d.db.ExecContext(ctx, query, r.Platform, r.SourceURL, r.Title, r.CoverURL, r.SongCount, r.SongsJSON, r.CreatedAt)
 	if err != nil {
 		return 0, err
 	}
@@ -538,7 +582,7 @@ func (d *DB) ListPlaylistHistory(ctx context.Context, limit int) ([]PlaylistHist
 		limit = 50
 	}
 
-	query := `SELECT id, platform, source_url, title, song_count, songs_json, created_at 
+	query := `SELECT id, platform, source_url, title, COALESCE(cover_url, ''), song_count, songs_json, created_at 
 	          FROM playlist_history ORDER BY created_at DESC LIMIT ?`
 	rows, err := d.db.QueryContext(ctx, query, limit)
 	if err != nil {
@@ -549,7 +593,7 @@ func (d *DB) ListPlaylistHistory(ctx context.Context, limit int) ([]PlaylistHist
 	var list []PlaylistHistoryRecord
 	for rows.Next() {
 		var r PlaylistHistoryRecord
-		if err := rows.Scan(&r.ID, &r.Platform, &r.SourceURL, &r.Title, &r.SongCount, &r.SongsJSON, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Platform, &r.SourceURL, &r.Title, &r.CoverURL, &r.SongCount, &r.SongsJSON, &r.CreatedAt); err != nil {
 			return nil, err
 		}
 		list = append(list, r)
@@ -562,12 +606,12 @@ func (d *DB) GetPlaylistHistory(ctx context.Context, id int64) (*PlaylistHistory
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
-	query := `SELECT id, platform, source_url, title, song_count, songs_json, created_at 
+	query := `SELECT id, platform, source_url, title, COALESCE(cover_url, ''), song_count, songs_json, created_at 
 	          FROM playlist_history WHERE id = ?`
 	row := d.db.QueryRowContext(ctx, query, id)
 
 	var r PlaylistHistoryRecord
-	if err := row.Scan(&r.ID, &r.Platform, &r.SourceURL, &r.Title, &r.SongCount, &r.SongsJSON, &r.CreatedAt); err != nil {
+	if err := row.Scan(&r.ID, &r.Platform, &r.SourceURL, &r.Title, &r.CoverURL, &r.SongCount, &r.SongsJSON, &r.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil
 		}

@@ -1346,6 +1346,7 @@ func (s *Server) handlePlaylistParse(w http.ResponseWriter, r *http.Request) {
 			Platform:  result.Platform,
 			SourceURL: result.SourceURL,
 			Title:     result.Title,
+			CoverURL:  result.CoverURL,
 			SongCount: result.SongCount,
 			SongsJSON: string(songsJSON),
 			CreatedAt: time.Now().Unix(),
@@ -1376,6 +1377,7 @@ func (s *Server) handlePlaylistHistoryList(w http.ResponseWriter, r *http.Reques
 		Platform  string `json:"platform"`
 		SourceURL string `json:"source_url"`
 		Title     string `json:"title"`
+		CoverURL  string `json:"cover_url,omitempty"`
 		SongCount int    `json:"song_count"`
 		CreatedAt int64  `json:"created_at"`
 	}
@@ -1387,6 +1389,7 @@ func (s *Server) handlePlaylistHistoryList(w http.ResponseWriter, r *http.Reques
 			Platform:  rec.Platform,
 			SourceURL: rec.SourceURL,
 			Title:     rec.Title,
+			CoverURL:  rec.CoverURL,
 			SongCount: rec.SongCount,
 			CreatedAt: rec.CreatedAt,
 		}
@@ -1427,6 +1430,7 @@ func (s *Server) handlePlaylistHistoryDetail(w http.ResponseWriter, r *http.Requ
 		"platform":   rec.Platform,
 		"source_url": rec.SourceURL,
 		"title":      rec.Title,
+		"cover_url":  rec.CoverURL,
 		"song_count": rec.SongCount,
 		"songs":      songs,
 		"text_list":  textList,

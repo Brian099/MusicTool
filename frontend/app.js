@@ -1846,6 +1846,19 @@ window.loadHistoryDetail = async function(id) {
         document.getElementById('playlist-result-title').textContent = data.title || '歌单歌曲列表';
         document.getElementById('playlist-result-subtitle').textContent = `历史记录共 ${data.song_count} 首歌曲 (${platformNames[data.platform] || data.platform})`;
 
+        // 历史记录里也保存了封面地址，载入时同步刷新预览
+        const historyCoverEl = document.getElementById('playlist-result-cover');
+        if (historyCoverEl) {
+            if (data.cover_url) {
+                historyCoverEl.src = data.cover_url;
+                historyCoverEl.style.display = 'block';
+                historyCoverEl.title = '歌单封面，导入飞牛时将自动上传';
+            } else {
+                historyCoverEl.removeAttribute('src');
+                historyCoverEl.style.display = 'none';
+            }
+        }
+
         renderPlaylistSongs();
         showToast(`已成功载入历史歌单「${data.title}」`, 'success');
 
