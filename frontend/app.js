@@ -2392,7 +2392,14 @@ function initFeiNiuRenameModal() {
                     formData.append('name', name);
                     formData.append('file', pendingCoverFile);
                     const res = await fetch(API.feiniuPlaylistCover, { method: 'POST', body: formData });
-                    result = await res.json();
+                    const rawText = await res.text();
+                    try {
+                        result = JSON.parse(rawText);
+                    } catch (e) {
+                        const ct = res.headers.get('content-type') || '未知';
+                        const preview = rawText.slice(0, 160).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                        throw new Error(`服务端返回了非 JSON 内容（HTTP ${res.status}，Content-Type: ${ct}）：${preview || '空响应'}`);
+                    }
                     if (result.success) {
                         showToast('歌单封面已更新', 'success');
                     } else {
@@ -2592,7 +2599,10 @@ function initFeiNiuImportModal() {
                 try {
                     result = JSON.parse(rawText);
                 } catch (parseErr) {
-                    throw new Error(`服务端返回了非 JSON 内容 (HTTP ${res.status}): ${rawText.slice(0, 80).replace(/<[^>]*>/g, '').trim() || '页面错误或网关超时'}`);
+                    // 带上状态码与 Content-Type，便于区分「网关超时/代理错误页」与「应用自身异常」
+                    const ct = res.headers.get('content-type') || '未知';
+                    const preview = rawText.slice(0, 160).replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+                    throw new Error(`服务端返回了非 JSON 内容（HTTP ${res.status}，Content-Type: ${ct}）：${preview || '空响应（可能是网关超时或连接被中断）'}`);
                 }
 
                 if (!res.ok) {

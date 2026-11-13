@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"music-toolkit/internal/config"
 	"music-toolkit/internal/database"
@@ -292,6 +293,93 @@ func TestUploadPlaylistCoverEndToEnd(t *testing.T) {
 	if noGuid.Success || !strings.Contains(noGuid.Error, "GUID") {
 		t.Fatalf("缺少 guid 应报错: %s", rec)
 	}
+}
+
+// TestImportPlaylistSlowCoverDoesNotHang 图床不可达/极慢时，导入必须仍在超时上限内返回 JSON，
+// 不能把请求拖到网关超时（前端会收到非 JSON 的错误页）。
+func TestImportPlaylistSlowCoverDoesNotHang(t *testing.T) {
+	fnMux := http.NewServeMux()
+	fnMux.HandleFunc("/music/api/v1/user/password-login", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"userToken": "mock-token", "username": "tester"},
+		})
+	})
+	fnMux.HandleFunc("/music/api/v1/search/track", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"total": 0, "list": []any{}},
+		})
+	})
+	fnMux.HandleFunc("/music/api/v1/playlist/create", func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"code": 0,
+			"data": map[string]any{"guid": "pl-slow-1", "name": "慢图床测试"},
+		})
+	})
+	// 慢图床：客户端取消请求后立即返回，避免测试结束时阻塞
+	fnMux.HandleFunc("/slow-cover.jpg", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(30 * time.Second):
+		case <-r.Context().Done():
+		}
+	})
+	fnServer := httptest.NewServer(fnMux)
+	defer fnServer.Close()
+
+	tempDir := t.TempDir()
+	db, err := database.OpenDB(filepath.Join(tempDir, "slow.db"))
+	if err != nil {
+		t.Fatalf("open db: %v", err)
+	}
+	defer db.Close()
+
+	cfg := &config.Config{MusicDir: tempDir, OutputDir: filepath.Join(tempDir, "out"), Port: 6831}
+	appServer := httptest.NewServer(server.NewServer(cfg, db, GetFrontendFileSystem()).Handler())
+	defer appServer.Close()
+
+	initRec := doJSON(t, appServer.URL+"/api/auth/init", "", `{"username":"admin","password":"pass1234"}`)
+	var initResp struct {
+		Success bool   `json:"success"`
+		Token   string `json:"token"`
+	}
+	mustUnmarshal(t, initRec, &initResp)
+
+	connectBody := `{"server_url":"` + fnServer.URL + `","username":"tester","password":"123456"}`
+	doJSON(t, appServer.URL+"/api/feiniu/connect", initResp.Token, connectBody)
+
+	importBody := `{
+		"name":"慢图床测试",
+		"cover_url":"` + fnServer.URL + `/slow-cover.jpg",
+		"songs":[{"index":1,"song_name":"不存在的歌曲","artist":"不存在的歌手"}]
+	}`
+
+	start := time.Now()
+	rec := doJSON(t, appServer.URL+"/api/feiniu/playlist/import", initResp.Token, importBody)
+	elapsed := time.Since(start)
+
+	var resp struct {
+		Success bool `json:"success"`
+		Data    struct {
+			CoverUploaded bool   `json:"cover_uploaded"`
+			CoverError    string `json:"cover_error"`
+		} `json:"data"`
+	}
+	mustUnmarshal(t, rec, &resp)
+
+	if !resp.Success {
+		t.Fatalf("图床缓慢不应导致导入失败: %s", rec)
+	}
+	if resp.Data.CoverUploaded {
+		t.Fatalf("图床超时不应标记封面已上传")
+	}
+	if resp.Data.CoverError == "" {
+		t.Fatalf("应记录封面失败原因")
+	}
+	if elapsed > 20*time.Second {
+		t.Fatalf("导入耗时 %v，超出预期上限（封面步骤未被正确限时）", elapsed)
+	}
+	t.Logf("慢图床下导入耗时 %v，封面失败原因: %s", elapsed.Round(time.Millisecond), resp.Data.CoverError)
 }
 
 // doMultipart 构造 multipart/form-data 请求

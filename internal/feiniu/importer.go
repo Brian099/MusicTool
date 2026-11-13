@@ -331,15 +331,18 @@ func (imp *Importer) ImportPlaylist(ctx context.Context, req ImportPlaylistReque
 
 		coverID := ""
 		if coverURL := strings.TrimSpace(req.CoverURL); coverURL != "" {
-			data, ext, dlErr := downloadCoverImage(ctx, coverURL)
+			// 给"下载 + 上传"整段设上限，避免图床不可达时把导入请求拖到网关超时
+			coverCtx, cancelCover := context.WithTimeout(ctx, coverStepTimeout)
+			data, ext, dlErr := downloadCoverImage(coverCtx, coverURL)
 			if dlErr != nil {
 				coverErrMsg = dlErr.Error()
-			} else if id, upErr := imp.client.UploadPlaylistCover(ctx, data, "playlist_cover."+ext); upErr != nil {
+			} else if id, upErr := imp.client.UploadPlaylistCover(coverCtx, data, "playlist_cover."+ext); upErr != nil {
 				coverErrMsg = upErr.Error()
 			} else {
 				coverID = id
 				coverUploaded = true
 			}
+			cancelCover()
 		}
 
 		newPl, err := imp.client.CreatePlaylist(ctx, targetName, coverID)

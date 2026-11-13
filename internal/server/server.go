@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -179,7 +180,24 @@ func (s *Server) Handler() http.Handler {
 		io.Copy(w, f)
 	})
 
-	return corsMiddleware(mux)
+	return recoverJSON(corsMiddleware(mux))
+}
+
+// recoverJSON 兜住 handler 内的 panic，保证前端始终能拿到 JSON 而不是空响应/连接被重置。
+// 前端对非 JSON 响应会报「服务端返回了非 JSON 内容」，难以定位；这里统一转成 500 + JSON。
+func recoverJSON(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				slog.Error("HTTP handler panic", "path", r.URL.Path, "method", r.Method, "panic", rec)
+				writeJSON(w, http.StatusInternalServerError, map[string]any{
+					"error": fmt.Sprintf("服务端内部错误: %v", rec),
+					"code":  500,
+				})
+			}
+		}()
+		next.ServeHTTP(w, r)
+	})
 }
 
 func corsMiddleware(next http.Handler) http.Handler {

@@ -13,8 +13,12 @@ import (
 const (
 	// maxCoverBytes 封面图片下载上限，超过即中止，避免把超大图塞进内存
 	maxCoverBytes = 8 << 20 // 8MB
-	// coverDownloadTimeout 封面下载超时
-	coverDownloadTimeout = 20 * time.Second
+	// coverDownloadTimeout 封面下载超时。
+	// 封面属于"锦上添花"，不能让图床拖住整个歌单导入请求：
+	// 导入请求本身还要跑曲库检索与写入，过长会撞上网关/服务端的响应超时。
+	coverDownloadTimeout = 8 * time.Second
+	// coverStepTimeout 下载 + 上传封面的整体时间上限
+	coverStepTimeout = 12 * time.Second
 	// coverDownloadUA 下载封面使用的 UA，部分图床对空 UA 会返回 403
 	coverDownloadUA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 )
